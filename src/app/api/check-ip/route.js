@@ -270,7 +270,10 @@ export async function GET(request) {
       allowed: true, 
       ip: clientIP,
       ipTrimmed: clientIP.trim(),
-      allowedIPs: allowedIPs 
+      ipLower: clientIP.trim().toLowerCase(),
+      allowedIPs: allowedIPs,
+      allowedIPsCount: allowedIPs.length,
+      isLocalhost: false // Never set to true in production - only in development
     });
   } catch (error) {
     console.error('❌ Error checking IP:', error);

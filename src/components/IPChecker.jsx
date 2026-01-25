@@ -55,12 +55,16 @@ export default function IPChecker({ children }) {
                 localStorage.setItem('lastDetectedIP', data.ip);
             }
             
-            // Check allowed status - prioritize data.allowed over response status
-            if (data.allowed === true || data.isLocalhost === true) {
-                console.log('✅ Access granted!');
+            // STRICT CHECK: Only allow if explicitly allowed by API
+            // The API should only return allowed: true if IP is in whitelist
+            // We NEVER allow based on isLocalhost flag - that's only for development
+            if (data.allowed === true && data.isLocalhost !== true) {
+                // Only allow if explicitly allowed AND not a localhost bypass
+                console.log('✅ Access granted - IP is whitelisted');
                 setIsAllowed(true);
                 setLoading(false);
             } else {
+                // Explicitly denied, not in whitelist, or localhost bypass attempt
                 setIsAllowed(false);
                 setLoading(false);
                 // Show detailed error in console
@@ -69,6 +73,11 @@ export default function IPChecker({ children }) {
                 console.error('IP (trimmed):', data.ipTrimmed);
                 console.error('IP (lowercase):', data.ipLower);
                 console.error('Allowed IPs:', data.allowedIPs || []);
+                console.error('Allowed IPs Count:', data.allowedIPsCount || 0);
+                console.error('isLocalhost flag:', data.isLocalhost);
+                if (data.isLocalhost === true) {
+                    console.error('⚠️ SECURITY: Localhost bypass detected - access denied');
+                }
                 console.error('💡 TIP: Make sure the IP in the database matches exactly (including any spaces or case differences)');
             }
         } catch (error) {
