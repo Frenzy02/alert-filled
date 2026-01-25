@@ -555,95 +555,148 @@ export default function Home() {
     }, [jsonInput]);
 
   return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 p-4 md:p-8">
-            <div className="max-w-7xl mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
-                {/* Header */}
-                <header className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-8 text-center">
-                    <h1 className="text-4xl md:text-5xl font-bold mb-2">🔒 SOC Alerts Converter</h1>
-                    <p className="text-lg opacity-90">Paste JSON alert data and get formatted text output</p>
-                    <div className="flex gap-3 justify-center mt-4">
-                        <button
-                            onClick={() => setShowAddFormatModal(true)}
-                            className="px-6 py-2 bg-white text-purple-600 rounded-lg font-semibold hover:bg-gray-100 transition-all transform hover:-translate-y-0.5 hover:shadow-lg"
-                        >
-                            + Add New Alert Format
-                        </button>
-                        <button
-                            onClick={() => setShowSavedFormatsModal(true)}
-                            className="px-6 py-2 bg-white text-purple-600 rounded-lg font-semibold hover:bg-gray-100 transition-all transform hover:-translate-y-0.5 hover:shadow-lg flex items-center gap-2"
-                        >
-                            📋 Saved Formats ({savedAlertFormats.length})
-                        </button>
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 md:p-6">
+            <div className="max-w-7xl mx-auto">
+                {/* Professional Header */}
+                <header className="bg-slate-800/90 backdrop-blur-sm border border-slate-700 rounded-lg shadow-xl mb-6 p-6">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div>
+                            <div className="flex items-center gap-3 mb-2">
+                                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
+                                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl md:text-3xl font-bold text-white">SOC Alert Converter</h1>
+                                    <p className="text-sm text-slate-400">Security Operations Center - Alert Formatting Tool</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                            <button
+                                onClick={() => setShowAddFormatModal(true)}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all flex items-center gap-2 text-sm shadow-lg hover:shadow-xl"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                                New Format
+                            </button>
+                            <button
+                                onClick={() => setShowSavedFormatsModal(true)}
+                                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-all flex items-center gap-2 text-sm border border-slate-600"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Formats ({savedAlertFormats.length})
+                            </button>
+                        </div>
                     </div>
                 </header>
 
                 {/* Main Content */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 md:p-8">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {/* Input Section */}
-                    <div className="flex flex-col">
-                        <label htmlFor="jsonInput" className="font-semibold mb-2 text-gray-700 dark:text-gray-300 text-lg">
-                            Paste JSON Alert Data:
-                        </label>
+                    <div className="bg-slate-800/90 backdrop-blur-sm border border-slate-700 rounded-lg shadow-xl p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <label htmlFor="jsonInput" className="flex items-center gap-2 text-sm font-semibold text-slate-300">
+                                <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                JSON Input
+                            </label>
+                            {jsonInput && (
+                                <span className="text-xs text-slate-400 font-mono">
+                                    {jsonInput.length} chars
+                                </span>
+                            )}
+                        </div>
                         <textarea
                             id="jsonInput"
                             value={jsonInput}
                             onChange={(e) => setJsonInput(e.target.value)}
-                            placeholder="Paste your JSON alert data here..."
-                            rows={15}
-                            className="w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg font-mono text-sm resize-y focus:outline-none focus:border-purple-500 dark:bg-gray-800 dark:text-gray-100"
+                            placeholder="Paste JSON alert data here..."
+                            rows={18}
+                            className="w-full p-4 bg-slate-900/50 border border-slate-600 rounded-lg font-mono text-xs text-slate-200 resize-y focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder:text-slate-500"
                         />
-                        <div className="flex gap-3 mt-4">
+                        <div className="flex gap-2 mt-3">
                             <button
                                 onClick={handleConvert}
-                                className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-800 transition-all transform hover:-translate-y-0.5 hover:shadow-lg"
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl"
                             >
-                                Convert to Text
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Convert
                             </button>
                             <button
                                 onClick={handleClear}
-                                className="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 transition-all transform hover:-translate-y-0.5"
+                                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-all text-sm border border-slate-600"
                             >
                                 Clear
                             </button>
                         </div>
-        </div>
+                    </div>
 
                     {/* Output Section */}
-                    <div className="flex flex-col">
-                        <label htmlFor="textOutput" className="font-semibold mb-2 text-gray-700 dark:text-gray-300 text-lg">
-                            Formatted Text Output:
-                        </label>
+                    <div className="bg-slate-800/90 backdrop-blur-sm border border-slate-700 rounded-lg shadow-xl p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <label htmlFor="textOutput" className="flex items-center gap-2 text-sm font-semibold text-slate-300">
+                                <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Formatted Output
+                            </label>
+                            {textOutput && (
+                                <span className="text-xs text-slate-400 font-mono">
+                                    {textOutput.length} chars
+                                </span>
+                            )}
+        </div>
                         <textarea
                             id="textOutput"
                             value={textOutput}
                             readOnly
                             placeholder="Formatted text will appear here..."
-                            rows={15}
-                            className="w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg font-mono text-sm resize-y bg-gray-50 dark:bg-gray-800 dark:text-gray-100"
+                            rows={18}
+                            className="w-full p-4 bg-slate-900/50 border border-slate-600 rounded-lg font-mono text-xs text-slate-200 resize-y placeholder:text-slate-500"
                         />
-                        <div className="flex gap-3 mt-4">
+                        <div className="flex gap-2 mt-3">
                             <button
                                 onClick={handleCopy}
-                                className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-800 transition-all transform hover:-translate-y-0.5 hover:shadow-lg"
+                                disabled={!textOutput}
+                                className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl"
                             >
-                                Copy to Clipboard
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                Copy
                             </button>
-                          
                         </div>
                     </div>
                 </div>
 
                 {/* Error/Success Messages */}
-                {error && (
-                    <div className="mx-6 md:mx-8 mb-6 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg">
-                        {error}
-                    </div>
-                )}
-                {success && (
-                    <div className="mx-6 md:mx-8 mb-6 p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-700 text-green-700 dark:text-green-300 rounded-lg">
-                        {success}
-                    </div>
-                )}
+                <div className="mt-4 space-y-2">
+                    {error && (
+                        <div className="bg-red-900/30 border border-red-700/50 text-red-300 p-4 rounded-lg flex items-start gap-3">
+                            <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="text-sm">{error}</span>
+                        </div>
+                    )}
+                    {success && (
+                        <div className="bg-green-900/30 border border-green-700/50 text-green-300 p-4 rounded-lg flex items-start gap-3">
+                            <svg className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="text-sm">{success}</span>
+                        </div>
+                    )}
+                </div>
             </div>
             
             {/* Add Format Modal */}
@@ -654,51 +707,69 @@ export default function Home() {
 
             {/* Saved Formats Modal */}
             {showSavedFormatsModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
                         {/* Header */}
-                        <div className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-6 flex items-center justify-between">
-                            <div>
-                                <h2 className="text-2xl font-bold">📋 Saved Alert Formats</h2>
-                                <p className="text-sm opacity-90 mt-1">
-                                    {savedAlertFormats.length} format{savedAlertFormats.length !== 1 ? 's' : ''} saved
-                                </p>
+                        <div className="bg-slate-900/50 border-b border-slate-700 p-5 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-white">Saved Alert Formats</h2>
+                                    <p className="text-xs text-slate-400 mt-0.5">
+                                        {savedAlertFormats.length} format{savedAlertFormats.length !== 1 ? 's' : ''} configured
+                                    </p>
+                                </div>
                             </div>
                             <button
                                 onClick={() => {
                                     setShowSavedFormatsModal(false);
                                     setSearchQuery('');
                                 }}
-                                className="text-white hover:bg-white/20 rounded-lg p-2 transition-all"
+                                className="text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg p-2 transition-all"
                             >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </button>
                         </div>
 
                         {/* Content */}
-                        <div className="p-6 overflow-y-auto flex-1">
+                        <div className="p-5 overflow-y-auto flex-1 bg-slate-900/30">
                             {/* Search Input */}
                             <div className="mb-4">
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search alert formats..."
-                                    className="w-full px-4 py-2 border-2 border-purple-300 dark:border-purple-700 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-800 dark:text-gray-100"
-                                />
+                                <div className="relative">
+                                    <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                    <input
+                                        type="text"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder="Search alert formats..."
+                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 placeholder:text-slate-500 text-sm"
+                                    />
+                                </div>
                             </div>
 
                             {loadingFormats ? (
-                                <div className="text-center py-8">
-                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
-                                    <p className="text-gray-500 dark:text-gray-400 mt-2">Loading...</p>
+                                <div className="text-center py-12">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-600 border-t-blue-500 mx-auto"></div>
+                                    <p className="text-slate-400 mt-3 text-sm">Loading formats...</p>
                                 </div>
                             ) : savedAlertFormats.length === 0 ? (
-                                <div className="text-center py-8">
-                                    <p className="text-gray-500 dark:text-gray-400 italic">
-                                        No alert formats saved yet. Click "Add New Alert Format" to create one.
+                                <div className="text-center py-12">
+                                    <svg className="w-12 h-12 text-slate-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <p className="text-slate-400 text-sm">
+                                        No alert formats configured yet
+                                    </p>
+                                    <p className="text-slate-500 text-xs mt-1">
+                                        Click "New Format" to create one
                                     </p>
                                 </div>
                             ) : (() => {
@@ -713,22 +784,26 @@ export default function Home() {
 
                                 if (filteredFormats.length === 0) {
                                     return (
-                                        <div className="text-center py-8">
-                                            <p className="text-gray-500 dark:text-gray-400 italic">
-                                                No alert formats found matching "{searchQuery}"
+                                        <div className="text-center py-12">
+                                            <svg className="w-12 h-12 text-slate-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                            </svg>
+                                            <p className="text-slate-400 text-sm">
+                                                No formats found matching "{searchQuery}"
                                             </p>
                                         </div>
                                     );
                                 }
 
                                 return (
-                                    <div className="flex flex-wrap gap-2">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         {filteredFormats.map((format) => (
                                             <div
                                                 key={format.id}
-                                                className="px-4 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 border border-purple-300 dark:border-purple-700 rounded-lg text-sm font-medium text-purple-700 dark:text-purple-300 shadow-sm hover:shadow-md transition-all cursor-default"
+                                                className="px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-sm font-medium text-slate-200 hover:border-blue-500 hover:bg-slate-800/80 transition-all cursor-default flex items-center gap-2"
                                             >
-                                                {format.alertName}
+                                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                                <span className="truncate">{format.alertName}</span>
                                             </div>
                                         ))}
                                     </div>
