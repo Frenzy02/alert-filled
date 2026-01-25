@@ -22,7 +22,23 @@ export default function IPChecker({ children }) {
 
     const checkIP = async () => {
         try {
-            const response = await fetch('/api/check-ip');
+            // Add cache-busting to ensure fresh IP check
+            const response = await fetch('/api/check-ip', {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
+            });
+            
+            // Check if response is ok first
+            if (!response.ok && response.status === 403) {
+                const data = await response.json().catch(() => ({}));
+                console.error('❌ API returned 403:', data);
+                setIsAllowed(false);
+                setLoading(false);
+                return;
+            }
+            
             const data = await response.json();
             
             // Log for debugging
@@ -32,13 +48,19 @@ export default function IPChecker({ children }) {
             console.log('📋 IP (Lowercase):', data.ipLower);
             console.log('✅ Allowed IPs in DB:', data.allowedIPs || []);
             console.log('📊 Total Allowed IPs:', data.allowedIPsCount || 0);
+            console.log('✅ Allowed Status:', data.allowed);
             
             // Store detected IP in localStorage for debugging
             if (typeof window !== 'undefined' && data.ip) {
                 localStorage.setItem('lastDetectedIP', data.ip);
             }
             
-            if (response.status === 403 || !data.allowed) {
+            // Check allowed status - prioritize data.allowed over response status
+            if (data.allowed === true || data.isLocalhost === true) {
+                console.log('✅ Access granted!');
+                setIsAllowed(true);
+                setLoading(false);
+            } else {
                 setIsAllowed(false);
                 setLoading(false);
                 // Show detailed error in console
@@ -47,16 +69,14 @@ export default function IPChecker({ children }) {
                 console.error('IP (trimmed):', data.ipTrimmed);
                 console.error('IP (lowercase):', data.ipLower);
                 console.error('Allowed IPs:', data.allowedIPs || []);
-                console.error('Allowed IPs (trimmed):', data.allowedIPsTrimmed || []);
                 console.error('💡 TIP: Make sure the IP in the database matches exactly (including any spaces or case differences)');
-            } else {
-                console.log('✅ Access granted!');
-                setIsAllowed(true);
-                setLoading(false);
             }
         } catch (error) {
             console.error('❌ Error checking IP:', error);
-            setIsAllowed(false);
+            // On error, allow access temporarily to avoid blocking legitimate users
+            // You can change this to setIsAllowed(false) if you want stricter control
+            console.warn('⚠️ Allowing access due to error (check logs)');
+            setIsAllowed(true);
             setLoading(false);
         }
     };

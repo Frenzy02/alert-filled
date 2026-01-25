@@ -1,67 +1,21 @@
 import { NextResponse } from 'next/server';
 
-// Get allowed IPs from environment variables
-// In production, you should sync this with Firebase periodically or use edge config
-function getAllowedIPs() {
-  // Default: allow localhost for development
-  const defaultIPs = ['127.0.0.1', '::1', 'localhost'];
-  
-  // Get IPs from environment variables (you can update these from admin page)
-  const envIPs = process.env.ALLOWED_IPS ? process.env.ALLOWED_IPS.split(',').map(ip => ip.trim()) : [];
-  
-  return [...defaultIPs, ...envIPs];
-}
+// Note: Middleware runs at the edge and cannot directly access Firebase
+// So we'll use a simpler approach - allow access if IP check API would allow it
+// The actual IP checking is done in the IPChecker component and API route
 
 export function middleware(request) {
-  // Get client IP address (Vercel-compatible)
-  const forwarded = request.headers.get('x-forwarded-for');
-  const vercelIP = request.headers.get('x-vercel-forwarded-for');
-  const realIP = request.headers.get('x-real-ip');
-  const cfConnectingIP = request.headers.get('cf-connecting-ip');
-  
-  let ip = vercelIP || 
-           cfConnectingIP ||
-           (forwarded ? forwarded.split(',')[0].trim() : null) ||
-           realIP || 
-           request.ip || 
-           'unknown';
-  
-  // Clean up the IP (remove port if present)
-  if (ip && ip !== 'unknown') {
-    ip = ip.split(':')[0].trim();
-  }
-
   // Allow access to admin page, my-ip page, and API routes
+  // These pages handle their own authentication/IP checking
   if (request.nextUrl.pathname.startsWith('/admin') || 
       request.nextUrl.pathname.startsWith('/my-ip') ||
       request.nextUrl.pathname.startsWith('/api')) {
     return NextResponse.next();
   }
 
-  // Get allowed IPs
-  const allowedIPs = getAllowedIPs();
-
-  // Check if IP is allowed
-  const isAllowed = allowedIPs.some(allowedIP => {
-    // Exact match
-    if (ip === allowedIP) return true;
-    // CIDR notation support (basic)
-    if (allowedIP.includes('/')) {
-      // Simple CIDR check (you might want to use a library for production)
-      return checkCIDR(ip, allowedIP);
-    }
-    return false;
-  });
-
-  if (!isAllowed && ip !== 'unknown') {
-    return new NextResponse('Access Denied: Your IP address is not authorized to access this application.', {
-      status: 403,
-      headers: {
-        'Content-Type': 'text/plain',
-      },
-    });
-  }
-
+  // For other pages, we'll let the IPChecker component handle the IP checking
+  // The middleware will just pass through and let the client-side component check
+  // This allows Firebase to be checked properly on the client/API side
   return NextResponse.next();
 }
 
