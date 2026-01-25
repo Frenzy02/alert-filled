@@ -50,9 +50,14 @@ export default function IPChecker({ children }) {
             console.log('📊 Total Allowed IPs:', data.allowedIPsCount || 0);
             console.log('✅ Allowed Status:', data.allowed);
             
-            // Store detected IP in localStorage for debugging
-            if (typeof window !== 'undefined' && data.ip) {
-                localStorage.setItem('lastDetectedIP', data.ip);
+            // Store detected IP and all IPs in localStorage for debugging
+            if (typeof window !== 'undefined') {
+                if (data.ip) {
+                    localStorage.setItem('lastDetectedIP', data.ip);
+                }
+                if (data.allDetectedIPs && data.allDetectedIPs.length > 0) {
+                    localStorage.setItem('allDetectedIPs', JSON.stringify(data.allDetectedIPs));
+                }
             }
             
             // STRICT CHECK: Only allow if explicitly allowed by API
@@ -163,13 +168,54 @@ export default function IPChecker({ children }) {
                             </svg>
                             <div className="text-left flex-1">
                                 <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
-                                    Detected IP Address:
+                                    Selected IP Address:
                                 </p>
-                                <p className="text-xs text-gray-600 dark:text-gray-400 font-mono break-all bg-white dark:bg-gray-900 p-2 rounded border border-red-200 dark:border-red-800">
+                                <p className="text-xs text-gray-600 dark:text-gray-400 font-mono break-all bg-white dark:bg-gray-900 p-2 rounded border border-red-200 dark:border-red-800 mb-3">
                                     {typeof window !== 'undefined' ? (localStorage.getItem('lastDetectedIP') || 'Unable to detect') : 'Loading...'}
                                 </p>
+                                
+                                {/* Show all detected IPs if available */}
+                                {typeof window !== 'undefined' && (() => {
+                                    try {
+                                        const allIPsStr = localStorage.getItem('allDetectedIPs');
+                                        const allIPs = allIPsStr ? JSON.parse(allIPsStr) : [];
+                                        if (allIPs.length > 1) {
+                                            return (
+                                                <div className="mt-3">
+                                                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                                        All Detected IP Addresses:
+                                                    </p>
+                                                    <div className="space-y-1">
+                                                        {allIPs.map((ip, idx) => (
+                                                            <p 
+                                                                key={idx}
+                                                                className={`text-xs font-mono break-all bg-white dark:bg-gray-900 p-1.5 rounded border ${
+                                                                    ip === localStorage.getItem('lastDetectedIP') 
+                                                                        ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' 
+                                                                        : 'border-gray-200 dark:border-gray-700'
+                                                                }`}
+                                                            >
+                                                                {ip === localStorage.getItem('lastDetectedIP') && (
+                                                                    <span className="text-blue-600 dark:text-blue-400 mr-1">→</span>
+                                                                )}
+                                                                {ip}
+                                                            </p>
+                                                        ))}
+                                                    </div>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-2 italic">
+                                                        If the selected IP is not your device IP, try whitelisting one of the other detected IPs.
+                                                    </p>
+                                                </div>
+                                            );
+                                        }
+                                    } catch (e) {
+                                        return null;
+                                    }
+                                    return null;
+                                })()}
+                                
                                 <p className="text-xs text-gray-500 dark:text-gray-500 mt-3 italic">
-                                    Please contact the administrator to request access.
+                                    Please contact the administrator to request access with the correct IP address.
                                 </p>
                             </div>
                         </div>

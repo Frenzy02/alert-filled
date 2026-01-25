@@ -10,15 +10,15 @@ function isIPv4(ip) {
   return ipv4Pattern.test(ip);
 }
 
-// Helper function to extract IPv4 from a string (may contain multiple IPs)
-function extractIPv4(ipString) {
-  if (!ipString) return null;
+// Helper function to extract ALL IPv4s from a string (may contain multiple IPs)
+function extractAllIPv4s(ipString) {
+  if (!ipString) return [];
   
   // Split by comma to handle multiple IPs
   const ips = ipString.split(',').map(ip => ip.trim());
+  const ipv4s = [];
   
-  // Try to find IPv4 in the list
-  // Usually the first IP is the client, but check all
+  // Extract all IPv4 addresses
   for (const ip of ips) {
     // Remove port if present
     const cleanIP = ip.split(':')[0].trim();
@@ -27,11 +27,57 @@ function extractIPv4(ipString) {
     
     // Check if it's IPv4
     if (isIPv4(finalIP)) {
-      return finalIP;
+      ipv4s.push(finalIP);
     }
   }
   
-  return null;
+  return ipv4s;
+}
+
+// Helper function to check if IP is likely a proxy/VPN/server IP
+function isLikelyProxyIP(ip) {
+  if (!ip) return false;
+  
+  // Known Vercel IP ranges (common proxy IPs)
+  // These are examples - you might need to update based on actual Vercel IPs
+  const proxyRanges = [
+    /^76\.76\./, // Vercel
+    /^76\.223\./, // Vercel
+  ];
+  
+  // Check if IP matches known proxy patterns
+  for (const pattern of proxyRanges) {
+    if (pattern.test(ip)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Helper function to extract IPv4 from a string (may contain multiple IPs)
+// Tries to get the actual client IP, not proxy IP
+function extractIPv4(ipString) {
+  if (!ipString) return null;
+  
+  const allIPv4s = extractAllIPv4s(ipString);
+  
+  if (allIPv4s.length === 0) return null;
+  if (allIPv4s.length === 1) return allIPv4s[0];
+  
+  // If multiple IPs, try to find the client IP (not proxy)
+  // Strategy: Try the first IP, but if it looks like a proxy, try the last one
+  const firstIP = allIPv4s[0];
+  const lastIP = allIPv4s[allIPv4s.length - 1];
+  
+  // If first IP looks like a proxy, try last IP
+  if (isLikelyProxyIP(firstIP)) {
+    console.log(`⚠️ First IP looks like proxy (${firstIP}), trying last IP (${lastIP})`);
+    return lastIP;
+  }
+  
+  // Default to first IP (usually the client)
+  return firstIP;
 }
 
 function getClientIP(request) {
@@ -46,7 +92,21 @@ function getClientIP(request) {
   const realIP = request.headers.get('x-real-ip');
   const cfConnectingIP = request.headers.get('cf-connecting-ip');
   
-  // Log all headers for debugging
+  // Collect ALL possible IPv4s from all headers for debugging
+  const allPossibleIPs = [];
+  if (vercelIP) allPossibleIPs.push(...extractAllIPv4s(vercelIP));
+  if (cfConnectingIP) allPossibleIPs.push(...extractAllIPv4s(cfConnectingIP));
+  if (forwarded) allPossibleIPs.push(...extractAllIPv4s(forwarded));
+  if (realIP) allPossibleIPs.push(...extractAllIPv4s(realIP));
+  if (request.ip) {
+    const cleanIP = request.ip.split(':')[0].trim().replace(/^\[|\]$/g, '');
+    if (isIPv4(cleanIP)) allPossibleIPs.push(cleanIP);
+  }
+  
+  // Remove duplicates
+  const uniqueIPs = [...new Set(allPossibleIPs)];
+  
+  // Log all headers and detected IPs for debugging
   console.log('🔍 IP Detection Headers:', {
     'x-vercel-forwarded-for': vercelIP,
     'x-forwarded-for': forwarded,
@@ -54,12 +114,30 @@ function getClientIP(request) {
     'cf-connecting-ip': cfConnectingIP,
     'request.ip': request.ip
   });
+  console.log('📋 All Detected IPv4 Addresses:', uniqueIPs);
   
   // Try different headers in order of priority, extract IPv4 only
   let ip = null;
   
-  // First try Vercel-specific header (most reliable for Vercel)
-  if (vercelIP) {
+  // First try x-forwarded-for (often has the real client IP)
+  // In proxy chains, the LAST IP is sometimes the real client
+  if (forwarded) {
+    const forwardedIPs = extractAllIPv4s(forwarded);
+    if (forwardedIPs.length > 0) {
+      // Try last IP first (often the real client behind proxies)
+      if (forwardedIPs.length > 1 && !isLikelyProxyIP(forwardedIPs[forwardedIPs.length - 1])) {
+        ip = forwardedIPs[forwardedIPs.length - 1];
+        console.log('✅ Using LAST IP from x-forwarded-for (likely real client):', ip);
+      } else {
+        // Try first IP
+        ip = forwardedIPs[0];
+        console.log('✅ Using FIRST IP from x-forwarded-for:', ip);
+      }
+    }
+  }
+  
+  // Then try Vercel-specific header
+  if (!ip && vercelIP) {
     ip = extractIPv4(vercelIP);
     if (ip) {
       console.log('✅ Found IPv4 in x-vercel-forwarded-for:', ip);
@@ -71,16 +149,6 @@ function getClientIP(request) {
     ip = extractIPv4(cfConnectingIP);
     if (ip) {
       console.log('✅ Found IPv4 in cf-connecting-ip:', ip);
-    }
-  }
-  
-  // Then try standard forwarded header
-  // x-forwarded-for format: "client, proxy1, proxy2"
-  // First IP is usually the original client
-  if (!ip && forwarded) {
-    ip = extractIPv4(forwarded);
-    if (ip) {
-      console.log('✅ Found IPv4 in x-forwarded-for:', ip);
     }
   }
   
@@ -101,21 +169,15 @@ function getClientIP(request) {
     }
   }
   
-  // If we got an IP but it's not IPv4, log it but don't use it
-  if (!ip) {
-    // Check if we have any IPs but they're IPv6
-    const allIPs = [vercelIP, forwarded, realIP, cfConnectingIP, request.ip].filter(Boolean);
-    if (allIPs.length > 0) {
-      console.warn('⚠️ Found IPs but none are IPv4:', allIPs);
-    }
-  }
-  
   // If still no IPv4, return empty string (localhost)
   if (!ip || ip === 'unknown') {
     ip = '';
     console.log('📍 No IPv4 detected, using empty (localhost)');
   } else {
-    console.log('📍 Final Detected IPv4:', ip);
+    console.log('📍 Final Selected IPv4:', ip);
+    if (isLikelyProxyIP(ip)) {
+      console.warn('⚠️ WARNING: Selected IP looks like a proxy/VPN IP. All detected IPs:', uniqueIPs);
+    }
   }
   
   return ip;
@@ -140,6 +202,25 @@ function ipToNumber(ip) {
   return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
 }
 
+// Helper function to get all detected IPv4 addresses from request headers
+function getAllDetectedIPs(request) {
+  const forwarded = request.headers.get('x-forwarded-for');
+  const vercelIP = request.headers.get('x-vercel-forwarded-for');
+  const realIP = request.headers.get('x-real-ip');
+  const cfConnectingIP = request.headers.get('cf-connecting-ip');
+  
+  const allPossibleIPs = [];
+  if (vercelIP) allPossibleIPs.push(...extractAllIPv4s(vercelIP));
+  if (cfConnectingIP) allPossibleIPs.push(...extractAllIPv4s(cfConnectingIP));
+  if (forwarded) allPossibleIPs.push(...extractAllIPv4s(forwarded));
+  if (realIP) allPossibleIPs.push(...extractAllIPv4s(realIP));
+  if (request.ip) {
+    const cleanIP = request.ip.split(':')[0].trim().replace(/^\[|\]$/g, '');
+    if (isIPv4(cleanIP)) allPossibleIPs.push(cleanIP);
+  }
+  return [...new Set(allPossibleIPs)];
+}
+
 export async function GET(request) {
   try {
     const clientIP = getClientIP(request);
@@ -160,11 +241,15 @@ export async function GET(request) {
       }
     });
     
+    // Get all detected IPs for debugging (reusable)
+    const uniqueIPs = getAllDetectedIPs(request);
+    
     console.log('📥 Fetched from Firebase:', {
       totalDocs: querySnapshot.size,
       allowedIPs: allowedIPs,
       allowedIPsRaw: allowedIPs.map(ip => `"${ip}"`),
-      clientIP: clientIP
+      clientIP: clientIP,
+      allDetectedIPs: uniqueIPs
     });
 
     // Helper function to check if IP is a private/local IP
@@ -336,6 +421,10 @@ export async function GET(request) {
         allowedIPsLower: allowedIPs.map(ip => ip.trim().toLowerCase())
       });
       
+      // uniqueIPs is already declared at the top of the function, reuse it
+      // But we need fresh data, so get it again (this is inside if block, different scope)
+      const deniedUniqueIPs = getAllDetectedIPs(request);
+      
       return NextResponse.json(
         { 
           allowed: false, 
@@ -345,12 +434,14 @@ export async function GET(request) {
           message: 'IP address not authorized', 
           allowedIPs: allowedIPs,
           allowedIPsTrimmed: allowedIPs.map(ip => ip.trim()),
-          allowedIPsCount: allowedIPs.length
+          allowedIPsCount: allowedIPs.length,
+          allDetectedIPs: deniedUniqueIPs // Show all detected IPs so user can see alternatives
         },
         { status: 403 }
       );
     }
 
+    // uniqueIPs is already declared at the top of the function, reuse it
     console.log(`✅ Access granted for IP: ${clientIP}`);
     return NextResponse.json({ 
       allowed: true, 
@@ -359,7 +450,8 @@ export async function GET(request) {
       ipLower: clientIP.trim().toLowerCase(),
       allowedIPs: allowedIPs,
       allowedIPsCount: allowedIPs.length,
-      isLocalhost: false // Never set to true in production - only in development
+      isLocalhost: false, // Never set to true in production - only in development
+      allDetectedIPs: uniqueIPs // Show all detected IPs (already declared at top)
     });
   } catch (error) {
     console.error('❌ Error checking IP:', error);
