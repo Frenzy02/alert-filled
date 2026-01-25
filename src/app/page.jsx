@@ -398,6 +398,7 @@ export default function Home() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [showAddFormatModal, setShowAddFormatModal] = useState(false);
+    const [showSavedFormatsModal, setShowSavedFormatsModal] = useState(false);
     const [savedAlertFormats, setSavedAlertFormats] = useState([]);
     const [loadingFormats, setLoadingFormats] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -560,76 +561,21 @@ export default function Home() {
                 <header className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-8 text-center">
                     <h1 className="text-4xl md:text-5xl font-bold mb-2">🔒 SOC Alerts Converter</h1>
                     <p className="text-lg opacity-90">Paste JSON alert data and get formatted text output</p>
-                    <button
-                        onClick={() => setShowAddFormatModal(true)}
-                        className="mt-4 px-6 py-2 bg-white text-purple-600 rounded-lg font-semibold hover:bg-gray-100 transition-all transform hover:-translate-y-0.5 hover:shadow-lg"
-                    >
-                        + Add New Alert Format
-                    </button>
-                </header>
-
-                {/* Saved Alert Formats List */}
-                <div className="px-6 md:px-8 pt-6 pb-4">
-                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-lg border-2 border-purple-200 dark:border-purple-800 p-4">
-                        <div className="flex items-center justify-between mb-3">
-                            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                                <span>📋 Saved Alert Formats</span>
-                                <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
-                                    ({savedAlertFormats.length})
-                                </span>
-                            </h2>
-                        </div>
-                        
-                        {/* Search Input */}
-                        <div className="mb-3">
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search alert formats..."
-                                className="w-full px-4 py-2 border-2 border-purple-300 dark:border-purple-700 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
-                            />
-                        </div>
-
-                        {loadingFormats ? (
-                            <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
-                        ) : savedAlertFormats.length === 0 ? (
-                            <p className="text-sm text-gray-500 dark:text-gray-400 italic">
-                                No alert formats saved yet. Click "Add New Alert Format" to create one.
-                            </p>
-                        ) : (() => {
-                            // Filter formats based on search query
-                            const filteredFormats = savedAlertFormats.filter((format) => {
-                                const query = searchQuery.toLowerCase();
-                                return (
-                                    format.alertName.toLowerCase().includes(query) ||
-                                    (format.eventName && format.eventName.toLowerCase().includes(query))
-                                );
-                            });
-
-                            if (filteredFormats.length === 0) {
-                                return (
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 italic">
-                                        No alert formats found matching "{searchQuery}"
-                                    </p>
-                                );
-                            }
-
-                            return (
-                                <div className="flex flex-wrap gap-2">
-                                    {filteredFormats.map((format) => (
-                                        <div
-                                            key={format.id}
-                                            className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-purple-300 dark:border-purple-700 rounded-lg text-sm font-medium text-purple-700 dark:text-purple-300 shadow-sm hover:shadow-md transition-shadow"
-                                        >
-                                            {format.alertName}
-                                        </div>
-                                    ))}
-                                </div>
-                            );
-                        })()}
+                    <div className="flex gap-3 justify-center mt-4">
+                        <button
+                            onClick={() => setShowAddFormatModal(true)}
+                            className="px-6 py-2 bg-white text-purple-600 rounded-lg font-semibold hover:bg-gray-100 transition-all transform hover:-translate-y-0.5 hover:shadow-lg"
+                        >
+                            + Add New Alert Format
+                        </button>
+                        <button
+                            onClick={() => setShowSavedFormatsModal(true)}
+                            className="px-6 py-2 bg-white text-purple-600 rounded-lg font-semibold hover:bg-gray-100 transition-all transform hover:-translate-y-0.5 hover:shadow-lg flex items-center gap-2"
+                        >
+                            📋 Saved Formats ({savedAlertFormats.length})
+                        </button>
                     </div>
-                </div>
+                </header>
 
                 {/* Main Content */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 md:p-8">
@@ -705,6 +651,93 @@ export default function Home() {
                 isOpen={showAddFormatModal} 
                 onClose={() => setShowAddFormatModal(false)} 
             />
+
+            {/* Saved Formats Modal */}
+            {showSavedFormatsModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+                        {/* Header */}
+                        <div className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-6 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-2xl font-bold">📋 Saved Alert Formats</h2>
+                                <p className="text-sm opacity-90 mt-1">
+                                    {savedAlertFormats.length} format{savedAlertFormats.length !== 1 ? 's' : ''} saved
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setShowSavedFormatsModal(false);
+                                    setSearchQuery('');
+                                }}
+                                className="text-white hover:bg-white/20 rounded-lg p-2 transition-all"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 overflow-y-auto flex-1">
+                            {/* Search Input */}
+                            <div className="mb-4">
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search alert formats..."
+                                    className="w-full px-4 py-2 border-2 border-purple-300 dark:border-purple-700 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-800 dark:text-gray-100"
+                                />
+                            </div>
+
+                            {loadingFormats ? (
+                                <div className="text-center py-8">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
+                                    <p className="text-gray-500 dark:text-gray-400 mt-2">Loading...</p>
+                                </div>
+                            ) : savedAlertFormats.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <p className="text-gray-500 dark:text-gray-400 italic">
+                                        No alert formats saved yet. Click "Add New Alert Format" to create one.
+                                    </p>
+                                </div>
+                            ) : (() => {
+                                // Filter formats based on search query
+                                const filteredFormats = savedAlertFormats.filter((format) => {
+                                    const query = searchQuery.toLowerCase();
+                                    return (
+                                        format.alertName.toLowerCase().includes(query) ||
+                                        (format.eventName && format.eventName.toLowerCase().includes(query))
+                                    );
+                                });
+
+                                if (filteredFormats.length === 0) {
+                                    return (
+                                        <div className="text-center py-8">
+                                            <p className="text-gray-500 dark:text-gray-400 italic">
+                                                No alert formats found matching "{searchQuery}"
+                                            </p>
+                                        </div>
+                                    );
+                                }
+
+                                return (
+                                    <div className="flex flex-wrap gap-2">
+                                        {filteredFormats.map((format) => (
+                                            <div
+                                                key={format.id}
+                                                className="px-4 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 border border-purple-300 dark:border-purple-700 rounded-lg text-sm font-medium text-purple-700 dark:text-purple-300 shadow-sm hover:shadow-md transition-all cursor-default"
+                                            >
+                                                {format.alertName}
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
+        </div>
+            )}
     </div>
   );
 }
