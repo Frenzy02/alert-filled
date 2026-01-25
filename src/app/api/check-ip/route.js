@@ -132,19 +132,59 @@ export async function GET(request) {
       return false;
     };
 
-    // If IP is empty, null, or unknown, allow access (localhost/development)
-    // But still return the allowed IPs list for display
-    if (!clientIP || clientIP === '' || clientIP === 'unknown' || defaultIPs.includes(clientIP)) {
-      console.log('✅ Allowing access for localhost/development IP:', clientIP || 'empty (localhost)');
-      return NextResponse.json({ 
-        allowed: true, 
-        ip: clientIP || 'localhost',
-        ipTrimmed: clientIP || 'localhost',
-        ipLower: (clientIP || 'localhost').toLowerCase(),
-        isLocalhost: true,
-        allowedIPs: allowedIPs,
-        allowedIPsCount: allowedIPs.length
-      });
+    // Strict IP checking - only allow if IP is explicitly whitelisted
+    // In production, do NOT allow localhost/unknown IPs automatically
+    // Only allow localhost in development (when NODE_ENV is development)
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    if (!clientIP || clientIP === '' || clientIP === 'unknown') {
+      if (isDevelopment) {
+        // Allow localhost only in development
+        console.log('✅ Allowing access for localhost/development IP:', clientIP || 'empty (localhost)');
+        return NextResponse.json({ 
+          allowed: true, 
+          ip: clientIP || 'localhost',
+          ipTrimmed: clientIP || 'localhost',
+          ipLower: (clientIP || 'localhost').toLowerCase(),
+          isLocalhost: true,
+          allowedIPs: allowedIPs,
+          allowedIPsCount: allowedIPs.length
+        });
+      } else {
+        // In production, reject empty/unknown IPs
+        console.log('❌ Rejecting empty/unknown IP in production');
+        return NextResponse.json(
+          { 
+            allowed: false, 
+            ip: clientIP || 'unknown',
+            ipTrimmed: clientIP || 'unknown',
+            ipLower: (clientIP || 'unknown').toLowerCase(),
+            message: 'IP address could not be detected',
+            allowedIPs: allowedIPs,
+            allowedIPsCount: allowedIPs.length
+          },
+          { status: 403 }
+        );
+      }
+    }
+    
+    // Check if it's a localhost IP (127.0.0.1, ::1) - only allow in development
+    if (defaultIPs.includes(clientIP)) {
+      if (isDevelopment) {
+        console.log('✅ Allowing localhost IP in development:', clientIP);
+        return NextResponse.json({ 
+          allowed: true, 
+          ip: clientIP,
+          ipTrimmed: clientIP,
+          ipLower: clientIP.toLowerCase(),
+          isLocalhost: true,
+          allowedIPs: allowedIPs,
+          allowedIPsCount: allowedIPs.length
+        });
+      } else {
+        // In production, localhost IPs must be explicitly whitelisted
+        console.log('⚠️ Localhost IP detected in production - must be whitelisted:', clientIP);
+      }
     }
 
     // Log if it's a private IP for debugging
@@ -152,7 +192,8 @@ export async function GET(request) {
       console.log('🔒 Detected private/local IP:', clientIP);
     }
 
-    // Check if IP is allowed (improved matching with detailed logging)
+    // Strict static IP checking - only allow if IP is explicitly whitelisted
+    // No automatic allowances, no dynamic IPs - only static whitelisted IPs
     const isAllowed = allowedIPs.some((allowedIP, index) => {
       // Skip if client IP is empty (shouldn't happen here, but safety check)
       if (!clientIP || clientIP === '') {
@@ -171,28 +212,28 @@ export async function GET(request) {
       }
       
       // Log each comparison attempt
-      console.log(`🔍 Comparing [${index}]: "${cleanClientIP}" vs "${cleanAllowedIP}"`);
-      console.log(`   Original client: "${clientIP}"`);
-      console.log(`   Original allowed: "${allowedIP}"`);
+      console.log(`🔍 Strict Static IP Check [${index}]: "${cleanClientIP}" vs "${cleanAllowedIP}"`);
+      console.log(`   Client IP (original): "${clientIP}"`);
+      console.log(`   Allowed IP (original): "${allowedIP}"`);
       
-      // Exact match (case-insensitive, trimmed)
+      // Exact match only (case-insensitive, trimmed) - no partial matches
       if (cleanClientIP === cleanAllowedIP) {
-        console.log(`✅ EXACT MATCH FOUND! ${clientIP} === ${allowedIP}`);
+        console.log(`✅ EXACT STATIC IP MATCH! ${clientIP} === ${allowedIP}`);
         return true;
       }
       
-      // CIDR notation support
+      // CIDR notation support (for static IP ranges only)
       if (cleanAllowedIP.includes('/')) {
         const result = checkCIDR(cleanClientIP, cleanAllowedIP);
         if (result) {
-          console.log(`✅ CIDR MATCH FOUND! ${clientIP} in ${allowedIP}`);
+          console.log(`✅ CIDR RANGE MATCH! ${clientIP} is within static range ${allowedIP}`);
         } else {
-          console.log(`❌ CIDR no match: ${clientIP} not in ${allowedIP}`);
+          console.log(`❌ CIDR no match: ${clientIP} not in static range ${allowedIP}`);
         }
         return result;
       }
       
-      console.log(`❌ No match: "${cleanClientIP}" !== "${cleanAllowedIP}"`);
+      console.log(`❌ No match: "${cleanClientIP}" !== "${cleanAllowedIP}" (strict static IP check)`);
       return false;
     });
 
@@ -232,9 +273,30 @@ export async function GET(request) {
       allowedIPs: allowedIPs 
     });
   } catch (error) {
-    console.error('Error checking IP:', error);
-    // On error, allow access (fail open) - you might want to change this
-    return NextResponse.json({ allowed: true, error: 'Error checking IP' });
+    console.error('❌ Error checking IP:', error);
+    // Fail closed - deny access on error for security
+    // Only allow in development mode
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    if (isDevelopment) {
+      console.warn('⚠️ Allowing access due to error in development mode');
+      return NextResponse.json({ 
+        allowed: true, 
+        error: 'Error checking IP (development mode)',
+        ip: 'unknown'
+      });
+    } else {
+      // In production, deny access on error
+      return NextResponse.json(
+        { 
+          allowed: false, 
+          error: 'Error checking IP address',
+          message: 'Unable to verify IP address. Access denied.',
+          ip: 'unknown'
+        },
+        { status: 403 }
+      );
+    }
   }
 }
 

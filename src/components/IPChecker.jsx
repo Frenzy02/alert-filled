@@ -73,10 +73,18 @@ export default function IPChecker({ children }) {
             }
         } catch (error) {
             console.error('❌ Error checking IP:', error);
-            // On error, allow access temporarily to avoid blocking legitimate users
-            // You can change this to setIsAllowed(false) if you want stricter control
-            console.warn('⚠️ Allowing access due to error (check logs)');
-            setIsAllowed(true);
+            // Fail closed - deny access on error for security
+            // Only allow in development mode
+            const isDevelopment = process.env.NODE_ENV === 'development';
+            
+            if (isDevelopment) {
+                console.warn('⚠️ Allowing access due to error in development mode');
+                setIsAllowed(true);
+            } else {
+                // In production, deny access on error
+                console.error('❌ Access denied due to error in production');
+                setIsAllowed(false);
+            }
             setLoading(false);
         }
     };
