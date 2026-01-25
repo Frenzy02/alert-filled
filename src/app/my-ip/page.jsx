@@ -86,7 +86,28 @@ export default function MyIPPage() {
                                         </p>
                                     )}
                                 </div>
-                             
+                                
+                                {/* Show /24 CIDR version */}
+                                {ipInfo.selectedIP && ipInfo.selectedIP !== 'Unknown' && !ipInfo.selectedIP.includes('/') && (() => {
+                                    const parts = ipInfo.selectedIP.split('.');
+                                    if (parts.length === 4) {
+                                        const cidr24 = `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
+                                        return (
+                                            <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-300 dark:border-yellow-700">
+                                                <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-300 mb-2">
+                                                    💡 Suggested CIDR Range (/24):
+                                                </p>
+                                                <p className="text-lg font-mono font-bold text-yellow-700 dark:text-yellow-400 text-center break-all">
+                                                    {cidr24}
+                                                </p>
+                                                <p className="text-xs text-yellow-600 dark:text-yellow-500 text-center mt-2">
+                                                    I-whitelist ang /24 range na ito para masakop ang buong IP range (256 IPs)
+                                                </p>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                             </div>
 
                             {/* All Detected IPs */}
@@ -96,31 +117,40 @@ export default function MyIPPage() {
                                         📋 All Detected Public IP Addresses
                                     </h3>
                                     <div className="space-y-2">
-                                        {ipInfo.allDetectedIPs.map((ip, idx) => (
-                                            <div
-                                                key={idx}
-                                                className={`p-3 rounded-lg border font-mono text-sm ${
-                                                    ip === ipInfo.selectedIP
-                                                        ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400 dark:border-blue-600'
-                                                        : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700'
-                                                }`}
-                                            >
-                                                <div className="flex items-center justify-between">
-                                                    <span className={ip === ipInfo.selectedIP ? 'font-bold text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}>
-                                                        {ip === ipInfo.selectedIP && <span className="mr-2">→</span>}
-                                                        {ip}
-                                                    </span>
-                                                    {ip === ipInfo.selectedIP && (
-                                                        <span className="text-xs bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
-                                                            Selected
+                                        {ipInfo.allDetectedIPs.map((ip, idx) => {
+                                            const parts = ip.split('.');
+                                            const cidr24 = parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.0/24` : null;
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    className={`p-3 rounded-lg border font-mono text-sm ${
+                                                        ip === ipInfo.selectedIP
+                                                            ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400 dark:border-blue-600'
+                                                            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className={ip === ipInfo.selectedIP ? 'font-bold text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}>
+                                                            {ip === ipInfo.selectedIP && <span className="mr-2">→</span>}
+                                                            {ip}
                                                         </span>
+                                                        {ip === ipInfo.selectedIP && (
+                                                            <span className="text-xs bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                                                                Selected
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {cidr24 && (
+                                                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                            /24 Range: <span className="font-semibold">{cidr24}</span>
+                                                        </div>
                                                     )}
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                     <p className="text-xs text-gray-600 dark:text-gray-400 mt-3 italic">
-                                        Kung ang selected IP ay hindi tama, subukan mong i-whitelist ang iba pang detected IPs
+                                        I-whitelist ang /24 range para masakop ang buong IP range (256 IPs)
                                     </p>
                                 </div>
                             )}

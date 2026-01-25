@@ -174,20 +174,41 @@ export default function AdminPage() {
         return false;
     };
 
+    // Helper function to convert IP to /24 CIDR
+    const convertToCIDR24 = (ip) => {
+        if (!ip || ip.includes('/')) return ip; // Already CIDR or invalid
+        const parts = ip.split('.');
+        if (parts.length === 4) {
+            return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
+        }
+        return ip;
+    };
+
     const handleAddIP = async () => {
         if (!newIP.trim()) {
             setError('Please enter an IP address');
             return;
         }
 
+        let trimmedIP = newIP.trim();
+        
+        // Auto-convert to /24 CIDR if it's a regular IP (not already CIDR)
+        if (!trimmedIP.includes('/')) {
+            const parts = trimmedIP.split('.');
+            if (parts.length === 4) {
+                // Convert to /24 CIDR automatically
+                trimmedIP = convertToCIDR24(trimmedIP);
+                setSuccess(`Auto-converted to CIDR: ${trimmedIP}`);
+            }
+        }
+
         // Validate IP format
-        if (!isValidIP(newIP.trim())) {
+        if (!isValidIP(trimmedIP)) {
             setError('Invalid IP address format. Use IPv4 (e.g., 192.168.1.1) or CIDR (e.g., 192.168.1.0/24)');
             return;
         }
 
         // Check for duplicates
-        const trimmedIP = newIP.trim();
         const isDuplicate = allowedIPs.some(item => item.ip === trimmedIP);
         if (isDuplicate) {
             setError('This IP address is already in the whitelist');
@@ -203,9 +224,9 @@ export default function AdminPage() {
             });
             
             setNewIP('');
-            setSuccess('IP address added successfully!');
+            setSuccess(`IP address added successfully! (Saved as: ${trimmedIP})`);
             setError('');
-            setTimeout(() => setSuccess(''), 3000);
+            setTimeout(() => setSuccess(''), 5000);
             fetchAllowedIPs();
         } catch (err) {
             setError('Failed to add IP address: ' + err.message);
@@ -330,13 +351,11 @@ export default function AdminPage() {
                             </button>
                         </div>
                         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                            Supports IPv4 addresses and CIDR notation. Examples:
+                            💡 <strong>Tip:</strong> Regular IPs ay automatic na i-convert sa /24 CIDR range (hal. 139.135.192.120 → 139.135.192.0/24)
                             <br />
-                            • Static local IP: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">192.168.1.100</code>
+                            • Maglagay ng IP: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">139.135.192.120</code> → Auto-convert sa <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">139.135.192.0/24</code>
                             <br />
-                            • Local network range: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">192.168.1.0/24</code>
-                            <br />
-                            • Public IP: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">203.0.113.45</code>
+                            • O maglagay ng CIDR diretso: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">192.168.1.0/24</code>
                         </p>
                     </div>
 
