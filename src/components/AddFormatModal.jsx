@@ -17,76 +17,139 @@ export default function AddFormatModal({ isOpen, onClose }) {
         const mappings = [];
         const lines = expectedFormatText.split('\n');
         
-        // Skip alert name, date/time, and description (first 3 sections)
-        let sectionCount = 0;
-        let currentLabel = null;
+        // Track which sections we've seen
+        let seenAlertName = false;
+        let seenDateTime = false;
+        let seenDescription = false;
+        let inFieldsSection = false;
         
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
+            const nextLine = lines[i + 1]?.trim();
             
             // Skip empty lines
             if (!line) {
-                if (currentLabel) {
-                    currentLabel = null; // Reset label on empty line
-                }
                 continue;
             }
             
-            // Skip alert name (first non-empty line)
-            if (sectionCount === 0 && (line === jsonData.xdr_event?.display_name || line === jsonData.event_name)) {
-                sectionCount++;
+            // Detect alert name (first non-empty line that matches)
+            if (!seenAlertName && (line === jsonData.xdr_event?.display_name || line === jsonData.event_name)) {
+                seenAlertName = true;
                 continue;
             }
             
-            // Skip date/time (format: M/D/YY, H:MM AM/PM)
-            if (line.match(/^\d{1,2}\/\d{1,2}\/\d{2},?\s+\d{1,2}:\d{2}\s+(AM|PM)/i)) {
-                sectionCount++;
+            // Detect date/time (format: M/D/YY, H:MM AM/PM)
+            if (!seenDateTime && line.match(/^\d{1,2}\/\d{1,2}\/\d{2},?\s+\d{1,2}:\d{2}\s+(AM|PM)/i)) {
+                seenDateTime = true;
                 continue;
             }
             
-            // Skip description (usually long text)
-            if (sectionCount === 2 && line.length > 50) {
-                sectionCount++;
+            // Detect description (long text after date/time)
+            if (seenDateTime && !seenDescription && line.length > 30) {
+                seenDescription = true;
+                inFieldsSection = true;
                 continue;
             }
             
-            // After description, we have field labels and values
-            if (sectionCount >= 3) {
-                const nextLine = lines[i + 1]?.trim();
-                const nextNextLine = lines[i + 2]?.trim();
+            // After description, we're in the fields section
+            if (seenDescription) {
+                inFieldsSection = true;
+            }
+            
+            // Extract field label-value pairs
+            if (inFieldsSection && nextLine && nextLine.length > 0) {
+                // Check if this line could be a label and next line is a value
+                // A label is usually short, doesn't look like a path/IP/date
+                const isNotValue = !line.match(/^\d+\.\d+\.\d+\.\d+/) && // Not IP
+                                  !line.match(/^[a-z]:\\/i) && // Not Windows path
+                                  !line.match(/^\d{1,2}\/\d{1,2}\/\d{2}/) && // Not date
+                                  !line.includes('\\') && // Not a path
+                                  line.length < 100; // Not too long
                 
-                // If next line exists and is not empty and not a date, this might be a label
-                if (nextLine && nextLine.length > 0 && !nextLine.match(/^\d{1,2}\/\d{1,2}\/\d{2}/)) {
-                    // Check if next line looks like a value (not a label)
-                    const looksLikeValue = nextLine.length > 5 || 
-                                         nextLine.includes('\\') || 
-                                         nextLine.includes('/') ||
-                                         nextLine.includes('.') ||
-                                         nextLine.match(/^\d+\.\d+\.\d+\.\d+/) || // IP address
-                                         nextLine.match(/^[a-z]:\\/i); // Windows path
+                // Next line looks like a value (has path, IP, or is longer)
+                const nextLineIsValue = nextLine.length > 3 && (
+                    nextLine.includes('\\') ||
+                    nextLine.includes('/') ||
+                    nextLine.match(/^\d+\.\d+\.\d+\.\d+/) ||
+                    nextLine.match(/^[a-z]:\\/i) ||
+                    nextLine.length > 10
+                );
+                
+                if (isNotValue && nextLineIsValue) {
+                    // This is a label-value pair
+                    const label = line;
+                    const value = nextLine;
                     
-                    if (looksLikeValue) {
-                        // This line is a label, next line is the value
-                        currentLabel = line;
-                        const value = nextLine;
-                        
-                        // Find the path of this value in JSON
-                        const fieldPath = findFieldPath(jsonData, value);
-                        if (fieldPath) {
-                            mappings.push({
-                                label: currentLabel,
-                                path: fieldPath,
-                                sampleValue: value
-                            });
-                        }
-                        i++; // Skip the value line
-                        currentLabel = null;
+                    // Find the path of this value in JSON
+                    const fieldPath = findFieldPath(jsonData, value);
+                    if (fieldPath) {
+                        mappings.push({
+                            label: label,
+                            path: fieldPath,
+                            sampleValue: value
+                        });
+                    } else {
+                        // Even if we can't find the path, save the label-value pair
+                        // We'll use it for template replacement
+                        mappings.push({
+                            label: label,
+                            path: null, // Will be handled in template replacement
+                            sampleValue: value
+                        });
+                    }
+                    i++; // Skip the value line
+                } else if (isNotValue && !nextLineIsValue && line.length < 50) {
+                    // Might be a label with value on same line or next non-empty line
+                    // Try to find value in JSON by searching for the label text
+                    const label = line;
+                    // Try to find a value that contains parts of the label
+                    const fieldPath = findFieldPathByLabel(jsonData, label);
+                    if (fieldPath) {
+                        const value = getNestedValue(jsonData, fieldPath);
+                        mappings.push({
+                            label: label,
+                            path: fieldPath,
+                            sampleValue: String(value || '')
+                        });
                     }
                 }
             }
         }
         
         return mappings;
+    };
+    
+    // Helper to get nested value
+    const getNestedValue = (obj, path) => {
+        if (!path) return null;
+        return path.split('.').reduce((current, key) => current?.[key], obj);
+    };
+    
+    // Find field path by label name (fuzzy matching)
+    const findFieldPathByLabel = (obj, label, prefix = '', visited = new Set()) => {
+        const objKey = JSON.stringify(obj);
+        if (visited.has(objKey)) return null;
+        visited.add(objKey);
+        
+        const labelLower = label.toLowerCase().replace(/\s+/g, '');
+        
+        for (const key in obj) {
+            const value = obj[key];
+            const currentPath = prefix ? `${prefix}.${key}` : key;
+            const keyLower = key.toLowerCase().replace(/_/g, '').replace(/-/g, '');
+            
+            // Check if key matches label
+            if (keyLower.includes(labelLower) || labelLower.includes(keyLower)) {
+                return currentPath;
+            }
+            
+            // For nested objects
+            if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                const found = findFieldPathByLabel(value, label, currentPath, visited);
+                if (found) return found;
+            }
+        }
+        return null;
     };
     
     // Find the path of a value in JSON (improved matching)
@@ -97,18 +160,29 @@ export default function AddFormatModal({ isOpen, onClose }) {
         if (visited.has(objKey)) return null;
         visited.add(objKey);
         
+        const searchStr = String(searchValue).trim();
+        
         for (const key in obj) {
             const value = obj[key];
             const currentPath = prefix ? `${prefix}.${key}` : key;
             
             // Exact match
-            if (value === searchValue) {
+            if (String(value).trim() === searchStr) {
                 return currentPath;
             }
             
-            // String contains match (for partial matches)
-            if (typeof value === 'string' && value === searchValue) {
+            // Partial match for strings (if search value is contained in the value)
+            if (typeof value === 'string' && value.includes(searchStr) && searchStr.length > 3) {
                 return currentPath;
+            }
+            
+            // For arrays, check each element
+            if (Array.isArray(value)) {
+                for (let i = 0; i < value.length; i++) {
+                    if (String(value[i]).trim() === searchStr) {
+                        return `${currentPath}[${i}]`;
+                    }
+                }
             }
             
             // For nested objects

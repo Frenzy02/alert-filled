@@ -226,7 +226,86 @@ function formatOutput(fields) {
 
 // Get value from nested object using path string
 function getNestedValue(obj, path) {
-    return path.split('.').reduce((current, key) => current?.[key], obj);
+    if (!path) return null;
+    // Handle array indices like "field[0]"
+    const parts = path.split('.');
+    let current = obj;
+    for (const part of parts) {
+        if (part.includes('[')) {
+            const [key, index] = part.split('[');
+            const idx = parseInt(index.replace(']', ''));
+            current = current?.[key]?.[idx];
+        } else {
+            current = current?.[part];
+        }
+        if (current === null || current === undefined) break;
+    }
+    return current;
+}
+
+// Find value in data by label (fuzzy matching)
+function findValueByLabel(obj, label, prefix = '', visited = new Set()) {
+    if (!label) return null;
+    
+    const objKey = JSON.stringify(obj);
+    if (visited.has(objKey)) return null;
+    visited.add(objKey);
+    
+    const labelLower = label.toLowerCase().replace(/\s+/g, '');
+    
+    for (const key in obj) {
+        const value = obj[key];
+        const currentPath = prefix ? `${prefix}.${key}` : key;
+        const keyLower = key.toLowerCase().replace(/_/g, '').replace(/-/g, '');
+        
+        // Check if key matches label
+        if (keyLower.includes(labelLower) || labelLower.includes(keyLower)) {
+            return value;
+        }
+        
+        // For nested objects
+        if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+            const found = findValueByLabel(value, label, currentPath, visited);
+            if (found !== null) return found;
+        }
+    }
+    return null;
+}
+
+// Find corresponding value in new data based on sample value
+function findValueInData(data, sampleValue, visited = new Set()) {
+    if (!sampleValue) return null;
+    
+    const objKey = JSON.stringify(data);
+    if (visited.has(objKey)) return null;
+    visited.add(objKey);
+    
+    const sampleStr = String(sampleValue).trim();
+    
+    for (const key in data) {
+        const value = data[key];
+        
+        // Exact match
+        if (String(value).trim() === sampleStr) {
+            return value;
+        }
+        
+        // For arrays
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                if (String(item).trim() === sampleStr) {
+                    return item;
+                }
+            }
+        }
+        
+        // For nested objects
+        if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+            const found = findValueInData(value, sampleValue, visited);
+            if (found !== null) return found;
+        }
+    }
+    return null;
 }
 
 // Format using saved format configuration
@@ -286,16 +365,60 @@ function formatWithSavedConfig(data, formatConfig) {
         // Map all field values using field mappings
         if (formatConfig.fieldMappings && formatConfig.fieldMappings.length > 0) {
             formatConfig.fieldMappings.forEach(mapping => {
-                const sampleValue = getNestedValue(sampleJson, mapping.path);
-                const actualValue = getNestedValue(data, mapping.path);
+                // Use sampleValue from mapping if path is not available
+                let sampleValue = mapping.sampleValue;
+                let actualValue = '';
+                
+                if (mapping.path) {
+                    // Try to get from JSON using path
+                    sampleValue = getNestedValue(sampleJson, mapping.path) || mapping.sampleValue;
+                    actualValue = getNestedValue(data, mapping.path);
+                } else if (mapping.sampleValue) {
+                    // If no path, use sampleValue directly and try to find it in new data
+                    sampleValue = mapping.sampleValue;
+                    // Try to find by label
+                    actualValue = findValueByLabel(data, mapping.label) || '';
+                }
                 
                 if (sampleValue !== null && sampleValue !== undefined && sampleValue !== '') {
-                    const sampleStr = String(sampleValue);
-                    const actualStr = actualValue !== null && actualValue !== undefined ? String(actualValue) : '';
+                    const sampleStr = String(sampleValue).trim();
+                    const actualStr = actualValue !== null && actualValue !== undefined ? String(actualValue).trim() : '';
                     
                     // Only add to replacement map if values are different and actual value exists
-                    if (sampleStr !== actualStr && actualStr !== '') {
+                    if (sampleStr && actualStr && sampleStr !== actualStr) {
                         replacementMap.set(sampleStr, actualStr);
+                    }
+                }
+            });
+        }
+        
+        // Also try to replace any remaining values from sampleJson that appear in template
+        // This catches fields that weren't in the mappings
+        if (sampleJson && Object.keys(sampleJson).length > 0) {
+            const sampleJsonStr = JSON.stringify(sampleJson);
+            const dataJsonStr = JSON.stringify(data);
+            
+            // Extract all unique string values from sampleJson
+            const extractStringValues = (obj, values = new Set()) => {
+                for (const key in obj) {
+                    const value = obj[key];
+                    if (typeof value === 'string' && value.length > 3) {
+                        values.add(value);
+                    } else if (value !== null && typeof value === 'object') {
+                        extractStringValues(value, values);
+                    }
+                }
+                return values;
+            };
+            
+            const sampleValues = extractStringValues(sampleJson);
+            sampleValues.forEach(sampleVal => {
+                const sampleStr = String(sampleVal).trim();
+                if (sampleStr.length > 3 && template.includes(sampleStr)) {
+                    // Try to find corresponding value in new data
+                    const actualVal = findValueInData(data, sampleVal);
+                    if (actualVal && actualVal !== sampleStr) {
+                        replacementMap.set(sampleStr, String(actualVal));
                     }
                 }
             });
@@ -376,49 +499,76 @@ async function convertJsonToText(jsonString) {
         
         // Try to find saved format from Firebase
         try {
-            // First try by alert identifier (alert name)
-            if (identifier) {
-                const formatsQuery = query(
-                    collection(db, 'alertFormats'),
-                    where('alertIdentifier', '==', identifier)
-                );
-                const formatsSnapshot = await getDocs(formatsQuery);
-                
-                if (!formatsSnapshot.empty) {
-                    const formatConfig = formatsSnapshot.docs[0].data();
-                    return formatWithSavedConfig(data, formatConfig);
-                }
-            }
+            // Get all formats for better matching
+            const allFormatsQuery = query(collection(db, 'alertFormats'));
+            const allFormatsSnapshot = await getDocs(allFormatsQuery);
             
-            // Also check by event name
-            if (eventName) {
-                const eventQuery = query(
-                    collection(db, 'alertFormats'),
-                    where('eventName', '==', eventName)
-                );
-                const eventSnapshot = await getDocs(eventQuery);
+            if (!allFormatsSnapshot.empty) {
+                let bestMatch = null;
+                let bestMatchScore = 0;
                 
-                if (!eventSnapshot.empty) {
-                    const formatConfig = eventSnapshot.docs[0].data();
-                    return formatWithSavedConfig(data, formatConfig);
-                }
-            }
-            
-            // Try partial match on alert name
-            if (alertName) {
-                const allFormatsQuery = query(collection(db, 'alertFormats'));
-                const allFormatsSnapshot = await getDocs(allFormatsQuery);
-                
+                // Try exact matches first
                 for (const docSnap of allFormatsSnapshot.docs) {
                     const formatConfig = docSnap.data();
+                    const savedIdentifier = formatConfig.alertIdentifier?.toLowerCase() || '';
                     const savedAlertName = formatConfig.alertName?.toLowerCase() || '';
-                    const currentAlertName = alertName.toLowerCase();
+                    const savedEventName = formatConfig.eventName?.toLowerCase() || '';
                     
-                    // Check if alert names match (partial or full)
-                    if (savedAlertName && currentAlertName.includes(savedAlertName) || 
-                        savedAlertName.includes(currentAlertName)) {
+                    // Exact match on identifier (highest priority)
+                    if (identifier && savedIdentifier === identifier) {
                         return formatWithSavedConfig(data, formatConfig);
                     }
+                    
+                    // Exact match on event name
+                    if (eventName && savedEventName === eventName.toLowerCase()) {
+                        return formatWithSavedConfig(data, formatConfig);
+                    }
+                    
+                    // Exact match on alert name
+                    if (alertName && savedAlertName === alertName.toLowerCase()) {
+                        return formatWithSavedConfig(data, formatConfig);
+                    }
+                }
+                
+                // Try partial/fuzzy matches
+                for (const docSnap of allFormatsSnapshot.docs) {
+                    const formatConfig = docSnap.data();
+                    const savedIdentifier = formatConfig.alertIdentifier?.toLowerCase() || '';
+                    const savedAlertName = formatConfig.alertName?.toLowerCase() || '';
+                    const savedEventName = formatConfig.eventName?.toLowerCase() || '';
+                    
+                    let score = 0;
+                    
+                    // Partial match on identifier
+                    if (identifier && savedIdentifier && 
+                        (identifier.includes(savedIdentifier) || savedIdentifier.includes(identifier))) {
+                        score = Math.max(score, savedIdentifier.length / Math.max(identifier.length, savedIdentifier.length));
+                    }
+                    
+                    // Partial match on alert name
+                    if (alertName && savedAlertName) {
+                        const currentAlertName = alertName.toLowerCase();
+                        if (currentAlertName.includes(savedAlertName) || savedAlertName.includes(currentAlertName)) {
+                            score = Math.max(score, savedAlertName.length / Math.max(currentAlertName.length, savedAlertName.length));
+                        }
+                    }
+                    
+                    // Partial match on event name
+                    if (eventName && savedEventName) {
+                        const currentEventName = eventName.toLowerCase();
+                        if (currentEventName.includes(savedEventName) || savedEventName.includes(currentEventName)) {
+                            score = Math.max(score, savedEventName.length / Math.max(currentEventName.length, savedEventName.length));
+                        }
+                    }
+                    
+                    if (score > bestMatchScore && score > 0.5) { // At least 50% match
+                        bestMatchScore = score;
+                        bestMatch = formatConfig;
+                    }
+                }
+                
+                if (bestMatch) {
+                    return formatWithSavedConfig(data, bestMatch);
                 }
             }
         } catch (firebaseError) {
