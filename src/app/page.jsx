@@ -362,63 +362,28 @@ function formatWithSavedConfig(data, formatConfig) {
             replacementMap.set(sampleDesc, description);
         }
         
-        // Map all field values using field mappings
+        // Map all field values using field mappings (CRITICAL - use exact paths from mappings)
         if (formatConfig.fieldMappings && formatConfig.fieldMappings.length > 0) {
             formatConfig.fieldMappings.forEach(mapping => {
-                // Use sampleValue from mapping if path is not available
-                let sampleValue = mapping.sampleValue;
-                let actualValue = '';
+                // Get the sample value that appears in the template
+                const sampleValueInTemplate = mapping.sampleValue;
                 
+                // Get the actual value from the new JSON using the path
+                let actualValue = null;
                 if (mapping.path) {
-                    // Try to get from JSON using path
-                    sampleValue = getNestedValue(sampleJson, mapping.path) || mapping.sampleValue;
                     actualValue = getNestedValue(data, mapping.path);
-                } else if (mapping.sampleValue) {
-                    // If no path, use sampleValue directly and try to find it in new data
-                    sampleValue = mapping.sampleValue;
-                    // Try to find by label
-                    actualValue = findValueByLabel(data, mapping.label) || '';
                 }
                 
-                if (sampleValue !== null && sampleValue !== undefined && sampleValue !== '') {
-                    const sampleStr = String(sampleValue).trim();
-                    const actualStr = actualValue !== null && actualValue !== undefined ? String(actualValue).trim() : '';
+                // If we have both values and they're different, add to replacement map
+                if (sampleValueInTemplate && actualValue !== null && actualValue !== undefined) {
+                    const sampleStr = String(sampleValueInTemplate).trim();
+                    const actualStr = String(actualValue).trim();
                     
-                    // Only add to replacement map if values are different and actual value exists
+                    // Only replace if values are different
                     if (sampleStr && actualStr && sampleStr !== actualStr) {
                         replacementMap.set(sampleStr, actualStr);
-                    }
-                }
-            });
-        }
-        
-        // Also try to replace any remaining values from sampleJson that appear in template
-        // This catches fields that weren't in the mappings
-        if (sampleJson && Object.keys(sampleJson).length > 0) {
-            const sampleJsonStr = JSON.stringify(sampleJson);
-            const dataJsonStr = JSON.stringify(data);
-            
-            // Extract all unique string values from sampleJson
-            const extractStringValues = (obj, values = new Set()) => {
-                for (const key in obj) {
-                    const value = obj[key];
-                    if (typeof value === 'string' && value.length > 3) {
-                        values.add(value);
-                    } else if (value !== null && typeof value === 'object') {
-                        extractStringValues(value, values);
-                    }
-                }
-                return values;
-            };
-            
-            const sampleValues = extractStringValues(sampleJson);
-            sampleValues.forEach(sampleVal => {
-                const sampleStr = String(sampleVal).trim();
-                if (sampleStr.length > 3 && template.includes(sampleStr)) {
-                    // Try to find corresponding value in new data
-                    const actualVal = findValueInData(data, sampleVal);
-                    if (actualVal && actualVal !== sampleStr) {
-                        replacementMap.set(sampleStr, String(actualVal));
+                        console.log(`📋 Field Mapping: "${mapping.label}" (${mapping.path || 'no path'})`);
+                        console.log(`   Sample: "${sampleStr}" → Actual: "${actualStr}"`);
                     }
                 }
             });
@@ -427,11 +392,20 @@ function formatWithSavedConfig(data, formatConfig) {
         // Perform replacements in reverse order of length (longest first) to avoid partial replacements
         const sortedReplacements = Array.from(replacementMap.entries()).sort((a, b) => b[0].length - a[0].length);
         
+        console.log('🔄 Template Replacements:', Array.from(replacementMap.entries()));
+        
         sortedReplacements.forEach(([sampleValue, actualValue]) => {
             // Escape special regex characters
             const escapedSample = sampleValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // Replace all occurrences
-            template = template.replace(new RegExp(escapedSample, 'g'), actualValue);
+            // Replace all occurrences (case-sensitive to avoid wrong matches)
+            const regex = new RegExp(escapedSample, 'g');
+            const beforeReplace = template;
+            template = template.replace(regex, actualValue);
+            
+            // Debug: Log if replacement happened
+            if (beforeReplace !== template) {
+                console.log(`✅ Replaced: "${sampleValue}" → "${actualValue}"`);
+            }
         });
         
         return template.trim();
