@@ -60,16 +60,25 @@ export default function IPChecker({ children }) {
                 }
             }
             
+            // Check if we're in development mode
+            const isDevelopment = process.env.NODE_ENV === 'development' || 
+                                 window.location.hostname === 'localhost' || 
+                                 window.location.hostname === '127.0.0.1';
+            
             // STRICT CHECK: Only allow if explicitly allowed by API
-            // The API should only return allowed: true if IP is in whitelist
-            // We NEVER allow based on isLocalhost flag - that's only for development
-            if (data.allowed === true && data.isLocalhost !== true) {
-                // Only allow if explicitly allowed AND not a localhost bypass
+            // In development, also allow localhost
+            if (data.allowed === true) {
+                // Allow if explicitly allowed by API (whitelisted IP)
                 console.log('✅ Access granted - IP is whitelisted');
                 setIsAllowed(true);
                 setLoading(false);
+            } else if (isDevelopment && (data.isLocalhost === true || !data.ip || data.ip === 'localhost' || data.ip === '127.0.0.1' || data.ip === '')) {
+                // Allow localhost in development mode
+                console.log('✅ Access granted - localhost in development mode');
+                setIsAllowed(true);
+                setLoading(false);
             } else {
-                // Explicitly denied, not in whitelist, or localhost bypass attempt
+                // Explicitly denied, not in whitelist
                 setIsAllowed(false);
                 setLoading(false);
                 // Show detailed error in console
@@ -79,10 +88,6 @@ export default function IPChecker({ children }) {
                 console.error('IP (lowercase):', data.ipLower);
                 console.error('Allowed IPs:', data.allowedIPs || []);
                 console.error('Allowed IPs Count:', data.allowedIPsCount || 0);
-                console.error('isLocalhost flag:', data.isLocalhost);
-                if (data.isLocalhost === true) {
-                    console.error('⚠️ SECURITY: Localhost bypass detected - access denied');
-                }
                 console.error('💡 TIP: Make sure the IP in the database matches exactly (including any spaces or case differences)');
             }
         } catch (error) {

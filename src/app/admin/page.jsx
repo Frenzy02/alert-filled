@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, deleteDoc, doc, query, orderBy, updateDoc } from 'firebase/firestore';
+import AddFormatModal from '@/components/AddFormatModal';
 
 export default function AdminPage() {
     const [allowedIPs, setAllowedIPs] = useState([]);
@@ -16,6 +17,14 @@ export default function AdminPage() {
     const [password, setPassword] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [showPasswordForm, setShowPasswordForm] = useState(false);
+    const [fieldMappings, setFieldMappings] = useState([]);
+    const [newMappingLabel, setNewMappingLabel] = useState('');
+    const [newMappingPath, setNewMappingPath] = useState('');
+    const [mappingsLoading, setMappingsLoading] = useState(false);
+    const [alertFormats, setAlertFormats] = useState([]);
+    const [formatsLoading, setFormatsLoading] = useState(false);
+    const [showFormatModal, setShowFormatModal] = useState(false);
+    const [formatToEdit, setFormatToEdit] = useState(null);
     const router = useRouter();
 
     // Check if already authenticated
@@ -33,6 +42,8 @@ export default function AdminPage() {
     useEffect(() => {
         if (isAuthenticated) {
             checkIPAccess();
+            fetchFieldMappings();
+            fetchAlertFormats();
         }
     }, [isAuthenticated]);
 
@@ -255,6 +266,229 @@ export default function AdminPage() {
         return date.toLocaleString();
     };
 
+    // Fetch field mappings from Firebase
+    const fetchFieldMappings = async () => {
+        try {
+            setMappingsLoading(true);
+            const q = query(collection(db, 'fieldMappings'), orderBy('createdAt', 'desc'));
+            const querySnapshot = await getDocs(q);
+            const mappings = [];
+            querySnapshot.forEach((docSnap) => {
+                mappings.push({
+                    id: docSnap.id,
+                    ...docSnap.data()
+                });
+            });
+            setFieldMappings(mappings);
+        } catch (err) {
+            setError('Failed to fetch field mappings: ' + err.message);
+        } finally {
+            setMappingsLoading(false);
+        }
+    };
+
+    // Initialize or update field mappings document
+    const initializeFieldMappings = async () => {
+        try {
+            const q = query(collection(db, 'fieldMappings'));
+            const querySnapshot = await getDocs(q);
+            
+            if (querySnapshot.empty) {
+                // Create initial document with default mappings
+                const defaultMappings = [
+                    { label: 'Source IP', path: 'srcip' },
+                    { label: 'Destination Country', path: 'dstip_geo.countryName' },
+                    { label: 'App', path: 'appid_name' },
+                    { label: 'Days Silent', path: 'days_silent' },
+                    { label: 'Source Host', path: 'srcip_host' },
+                    { label: 'Destination Host', path: 'dstip_host' },
+                    { label: 'Source Reputation', path: 'srcip_reputation' },
+                    { label: 'Connections Summary', path: 'summary_connections' },
+                    { label: 'Percent Failed', path: 'num_failed' },
+                    { label: 'Destination Port', path: 'dstport' },
+                    { label: 'Source Port', path: 'srcport' },
+                    { label: 'Host IP', path: 'host.ip' },
+                    { label: 'Host Name', path: 'host.name' },
+                    { label: 'Process Path', path: 'eset.processname' },
+                    { label: 'User Name', path: 'user.name' },
+                    { label: 'Trigger Event', path: 'trigger_event' },
+                    { label: 'Command Line', path: 'command_line' },
+                    { label: 'Source', path: 'office365.Source' },
+                    { label: 'Threat Name', path: 'threat.name' },
+                    { label: 'Severity', path: 'office365.Severity' },
+                    { label: 'Alert Entity List', path: 'event_summary.alert_entity_list' },
+                    { label: 'Source User ID', path: 'srcip_usersid' },
+                    { label: 'Source Country', path: 'srcip_geo.countryName' },
+                    { label: 'Distance Deviation (Miles)', path: 'distance_deviation' },
+                    { label: 'Login Result', path: 'login_result' },
+                    { label: 'office365.UserId', path: 'office365.UserId' },
+                    { label: 'office365.ObjectId', path: 'office365.ObjectId' },
+                    { label: 'Shared File', path: 'office365.SourceFileName' },
+                    { label: 'Event Source', path: 'event_source' },
+                    { label: 'Total Fail Percentage', path: 'failure percentage rate' },
+                    { label: 'Actual', path: 'actual' },
+                    { label: 'Typical', path: 'typical' },
+                    { label: 'Device', path: 'engid_device_class' },
+                    { label: 'DNS query', path: 'metadata.request.query' },
+                    { label: 'Effective Top-Level Domain', path: 'metadata.request.effective_tld' },
+                    { label: 'Request Effective TLD', path: 'metadata.request.effective_tld' },
+                    { label: 'Domain Creation Time', path: 'metadata.request.domain_creation' },
+                    { label: 'Response Creation Time', path: 'metadata.response.domain_creation' },
+                    { label: 'Account Name', path: 'metadata.request.username' },
+                    { label: 'Total Number Failed', path: 'event_summary.total_failed' },
+                    { label: 'Total Number Successful', path: 'event_summary.total_successful' },
+                    { label: 'Login Type', path: 'login_type' },
+                    { label: 'IDS Signature', path: 'ids.signature' }
+                ];
+                
+                await addDoc(collection(db, 'fieldMappings'), {
+                    mappings: defaultMappings,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                });
+            }
+            
+            await fetchFieldMappings();
+        } catch (err) {
+            setError('Failed to initialize field mappings: ' + err.message);
+        }
+    };
+
+    const handleAddMapping = async () => {
+        if (!newMappingLabel.trim() || !newMappingPath.trim()) {
+            setError('Please enter both label and JSON path');
+            return;
+        }
+
+        // Check for duplicate label
+        const isDuplicate = fieldMappings.some(m => 
+            m.mappings && m.mappings.some(map => map.label === newMappingLabel.trim())
+        );
+        if (isDuplicate) {
+            setError('This label already exists');
+            return;
+        }
+
+        try {
+            const q = query(collection(db, 'fieldMappings'));
+            const querySnapshot = await getDocs(q);
+            
+            if (querySnapshot.empty) {
+                await initializeFieldMappings();
+                // Wait a bit for the document to be created
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            
+            const docRef = querySnapshot.docs[0] || (await getDocs(query(collection(db, 'fieldMappings')))).docs[0];
+            const currentMappings = docRef.data().mappings || [];
+            
+            const newMapping = {
+                label: newMappingLabel.trim(),
+                path: newMappingPath.trim()
+            };
+            
+            await updateDoc(doc(db, 'fieldMappings', docRef.id), {
+                mappings: [...currentMappings, newMapping],
+                updatedAt: new Date().toISOString()
+            });
+            
+            setNewMappingLabel('');
+            setNewMappingPath('');
+            setSuccess('Field mapping added successfully!');
+            setError('');
+            setTimeout(() => setSuccess(''), 3000);
+            await fetchFieldMappings();
+        } catch (err) {
+            setError('Failed to add field mapping: ' + err.message);
+        }
+    };
+
+    const handleDeleteMapping = async (mappingId, label) => {
+        if (!confirm(`Are you sure you want to remove the mapping for "${label}"?`)) {
+            return;
+        }
+
+        try {
+            const q = query(collection(db, 'fieldMappings'));
+            const querySnapshot = await getDocs(q);
+            const docRef = querySnapshot.docs[0];
+            
+            if (docRef) {
+                const currentMappings = docRef.data().mappings || [];
+                const updatedMappings = currentMappings.filter(m => m.label !== label);
+                
+                await updateDoc(doc(db, 'fieldMappings', docRef.id), {
+                    mappings: updatedMappings,
+                    updatedAt: new Date().toISOString()
+                });
+                
+                setSuccess('Field mapping removed successfully!');
+                setError('');
+                setTimeout(() => setSuccess(''), 3000);
+                await fetchFieldMappings();
+            }
+        } catch (err) {
+            setError('Failed to remove field mapping: ' + err.message);
+        }
+    };
+
+    // Fetch alert formats from Firebase
+    const fetchAlertFormats = async () => {
+        try {
+            setFormatsLoading(true);
+            const q = query(collection(db, 'alertFormats'), orderBy('createdAt', 'desc'));
+            const querySnapshot = await getDocs(q);
+            const formats = [];
+            querySnapshot.forEach((docSnap) => {
+                formats.push({
+                    id: docSnap.id,
+                    ...docSnap.data()
+                });
+            });
+            setAlertFormats(formats);
+        } catch (err) {
+            setError('Failed to fetch alert formats: ' + err.message);
+        } finally {
+            setFormatsLoading(false);
+        }
+    };
+
+    const handleEditFormat = (format) => {
+        // Make sure we have the full format object with all fields
+        setFormatToEdit({
+            id: format.id,
+            alertName: format.alertName,
+            expectedFormat: format.expectedFormat || '',
+            alertIdentifier: format.alertIdentifier
+        });
+        setShowFormatModal(true);
+    };
+
+    const handleDeleteFormat = async (formatId, alertName) => {
+        if (!confirm(`Are you sure you want to delete the format for "${alertName}"?`)) {
+            return;
+        }
+
+        try {
+            await deleteDoc(doc(db, 'alertFormats', formatId));
+            setSuccess('Alert format deleted successfully!');
+            setError('');
+            setTimeout(() => setSuccess(''), 3000);
+            await fetchAlertFormats();
+        } catch (err) {
+            setError('Failed to delete alert format: ' + err.message);
+        }
+    };
+
+    const handleFormatModalClose = () => {
+        setShowFormatModal(false);
+        setFormatToEdit(null);
+    };
+
+    const handleFormatSave = () => {
+        fetchAlertFormats();
+    };
+
     // Show password form if not authenticated
     if (showPasswordForm) {
         return (
@@ -353,6 +587,172 @@ export default function AdminPage() {
                       
                     </div>
 
+                    {/* Alert Formats Section */}
+                    <div className="mb-8">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+                                Alert Formats ({alertFormats.length})
+                            </h2>
+                            <button
+                                onClick={() => {
+                                    setFormatToEdit(null);
+                                    setShowFormatModal(true);
+                                }}
+                                className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-6 py-2 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-800 transition-all"
+                            >
+                                Add Format
+                            </button>
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                            Manage alert format templates
+                        </p>
+
+                        {formatsLoading ? (
+                            <div className="text-center py-4 text-gray-500">Loading formats...</div>
+                        ) : alertFormats.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                No alert formats found. Click "Add Format" to create one.
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full border-collapse border border-gray-300 dark:border-gray-600">
+                                    <thead>
+                                        <tr className="bg-gray-100 dark:bg-gray-800">
+                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">Alert Name</th>
+                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">Format Preview</th>
+                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">Created</th>
+                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {alertFormats.map((format) => {
+                                            const formatPreview = format.expectedFormat 
+                                                ? format.expectedFormat.split('\n').slice(0, 3).join('\n') + (format.expectedFormat.split('\n').length > 3 ? '...' : '')
+                                                : 'No format';
+                                            return (
+                                                <tr key={format.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                                                    <td className="border border-gray-300 dark:border-gray-600 p-3 font-semibold">
+                                                        {format.alertName || 'Unknown'}
+                                                    </td>
+                                                    <td className="border border-gray-300 dark:border-gray-600 p-3">
+                                                        <pre className="text-xs font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap max-w-md overflow-hidden">
+                                                            {formatPreview}
+                                                        </pre>
+                                                    </td>
+                                                    <td className="border border-gray-300 dark:border-gray-600 p-3">
+                                                        {formatDate(format.createdAt)}
+                                                    </td>
+                                                    <td className="border border-gray-300 dark:border-gray-600 p-3 text-center">
+                                                        <div className="flex gap-2 justify-center">
+                                                            <button
+                                                                onClick={() => handleEditFormat(format)}
+                                                                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-all text-sm"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeleteFormat(format.id, format.alertName)}
+                                                                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-all text-sm"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Field Mappings Section */}
+                    <div className="mb-8">
+                        <h2 className="text-2xl font-bold mb-4 text-gray-700 dark:text-gray-300">Field Mappings</h2>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                            Manage label to JSON path mappings used for formatting alerts
+                        </p>
+                        
+                        <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                                <input
+                                    type="text"
+                                    value={newMappingLabel}
+                                    onChange={(e) => setNewMappingLabel(e.target.value)}
+                                    placeholder="Label (e.g., Source IP)"
+                                    className="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                                />
+                                <input
+                                    type="text"
+                                    value={newMappingPath}
+                                    onChange={(e) => setNewMappingPath(e.target.value)}
+                                    placeholder="JSON Path (e.g., srcip)"
+                                    className="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                                />
+                            </div>
+                            <button
+                                onClick={handleAddMapping}
+                                className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-6 py-2 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-800 transition-all"
+                            >
+                                Add Mapping
+                            </button>
+                        </div>
+
+                        {mappingsLoading ? (
+                            <div className="text-center py-4 text-gray-500">Loading mappings...</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full border-collapse border border-gray-300 dark:border-gray-600">
+                                    <thead>
+                                        <tr className="bg-gray-100 dark:bg-gray-800">
+                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">Label</th>
+                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">JSON Path</th>
+                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {fieldMappings.length > 0 && fieldMappings[0].mappings ? (
+                                            fieldMappings[0].mappings.map((mapping, index) => (
+                                                <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                                                    <td className="border border-gray-300 dark:border-gray-600 p-3">
+                                                        {mapping.label}
+                                                    </td>
+                                                    <td className="border border-gray-300 dark:border-gray-600 p-3 font-mono text-sm">
+                                                        {mapping.path}
+                                                    </td>
+                                                    <td className="border border-gray-300 dark:border-gray-600 p-3 text-center">
+                                                        <button
+                                                            onClick={() => handleDeleteMapping(fieldMappings[0].id, mapping.label)}
+                                                            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-all text-sm"
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        ) : (
+                                            <tr>
+                                                <td colSpan="3" className="border border-gray-300 dark:border-gray-600 p-3 text-center text-gray-500">
+                                                    No mappings found. Click "Initialize Mappings" to add default mappings.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                        
+                        {fieldMappings.length === 0 && (
+                            <button
+                                onClick={initializeFieldMappings}
+                                className="mt-4 px-6 py-2 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 transition-all"
+                            >
+                                Initialize Default Mappings
+                            </button>
+                        )}
+                    </div>
+
                     {/* IP List */}
                     <div>
                         <h2 className="text-2xl font-bold mb-4 text-gray-700 dark:text-gray-300">
@@ -413,6 +813,14 @@ export default function AdminPage() {
                     )}
                 </div>
             </div>
+
+            {/* Format Modal */}
+            <AddFormatModal
+                isOpen={showFormatModal}
+                onClose={handleFormatModalClose}
+                formatToEdit={formatToEdit}
+                onSave={handleFormatSave}
+            />
         </div>
     );
 }
