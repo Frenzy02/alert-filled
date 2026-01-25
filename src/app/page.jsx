@@ -244,17 +244,98 @@ function formatWithSavedConfig(data, formatConfig) {
     }
     const dateTime = formatDate(timestamp);
     
-    let output = `${alertName}\n\n`;
-    output += `${dateTime}\n\n`;
-    output += `${description}\n\n`;
-    
     // Check if this is ESET format
     const isESETFormat = alertName.toLowerCase().includes('eset') || 
                         data.dev_type === 'eset_protect' ||
                         data.msg_class === 'eset_protect_enterprise_inspector';
     
+    // Priority 1: Use expectedFormat template if available (most accurate)
+    if (formatConfig && formatConfig.expectedFormat) {
+        let template = formatConfig.expectedFormat;
+        const sampleJson = formatConfig.sampleJson || {};
+        
+        // Build a map of sample values to actual values for replacement
+        const replacementMap = new Map();
+        
+        // Map alert name
+        const sampleAlertName = formatConfig.alertName || sampleJson.xdr_event?.display_name || sampleJson.event_name || '';
+        if (sampleAlertName && sampleAlertName !== alertName) {
+            replacementMap.set(sampleAlertName, alertName);
+        }
+        
+        // Map date/time
+        if (sampleJson.timestamp || sampleJson.timestamp_utc || sampleJson.alert_time) {
+            const sampleTimestamp = sampleJson.timestamp || sampleJson.alert_time || sampleJson.orig_timestamp;
+            let sampleDate = '';
+            if (sampleTimestamp) {
+                sampleDate = formatDate(sampleTimestamp);
+            } else if (sampleJson.timestamp_utc || sampleJson.orig_timestamp_utc) {
+                sampleDate = formatDate(new Date(sampleJson.timestamp_utc || sampleJson.orig_timestamp_utc).getTime());
+            }
+            if (sampleDate && sampleDate !== dateTime) {
+                replacementMap.set(sampleDate, dateTime);
+            }
+        }
+        
+        // Map description
+        const sampleDesc = sampleJson.xdr_event?.description || '';
+        if (sampleDesc && sampleDesc !== description) {
+            replacementMap.set(sampleDesc, description);
+        }
+        
+        // Map all field values using field mappings
+        if (formatConfig.fieldMappings && formatConfig.fieldMappings.length > 0) {
+            formatConfig.fieldMappings.forEach(mapping => {
+                const sampleValue = getNestedValue(sampleJson, mapping.path);
+                const actualValue = getNestedValue(data, mapping.path);
+                
+                if (sampleValue !== null && sampleValue !== undefined && sampleValue !== '') {
+                    const sampleStr = String(sampleValue);
+                    const actualStr = actualValue !== null && actualValue !== undefined ? String(actualValue) : '';
+                    
+                    // Only add to replacement map if values are different and actual value exists
+                    if (sampleStr !== actualStr && actualStr !== '') {
+                        replacementMap.set(sampleStr, actualStr);
+                    }
+                }
+            });
+        }
+        
+        // Perform replacements in reverse order of length (longest first) to avoid partial replacements
+        const sortedReplacements = Array.from(replacementMap.entries()).sort((a, b) => b[0].length - a[0].length);
+        
+        sortedReplacements.forEach(([sampleValue, actualValue]) => {
+            // Escape special regex characters
+            const escapedSample = sampleValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Replace all occurrences
+            template = template.replace(new RegExp(escapedSample, 'g'), actualValue);
+        });
+        
+        return template.trim();
+    }
+    
+    // Priority 2: Use field mappings to build output (if no template)
+    if (formatConfig && formatConfig.fieldMappings && formatConfig.fieldMappings.length > 0) {
+        let output = `${alertName}\n\n`;
+        output += `${dateTime}\n\n`;
+        output += `${description}\n\n`;
+        
+        formatConfig.fieldMappings.forEach(mapping => {
+            const value = getNestedValue(data, mapping.path);
+            if (value !== null && value !== undefined && value !== '') {
+                output += `${mapping.label}\n${value}\n\n`;
+            }
+        });
+        
+        return output.trim();
+    }
+    
+    // Priority 3: ESET format fallback
     if (isESETFormat) {
-        // ESET Protect specific format
+        let output = `${alertName}\n\n`;
+        output += `${dateTime}\n\n`;
+        output += `${description}\n\n`;
+        
         const esetFieldMappings = [
             { path: 'hostip', label: 'Host IP' },
             { path: 'host.name', label: 'Host Name' },
@@ -270,42 +351,14 @@ function formatWithSavedConfig(data, formatConfig) {
                 output += `${mapping.label}\n${value}\n\n`;
             }
         });
-    } else if (formatConfig && formatConfig.fieldMappings && formatConfig.fieldMappings.length > 0) {
-        // Use saved format configuration with field mappings
-        formatConfig.fieldMappings.forEach(mapping => {
-            const value = getNestedValue(data, mapping.path);
-            if (value !== null && value !== undefined && value !== '') {
-                output += `${mapping.label}\n${value}\n\n`;
-            }
-        });
-    } else if (formatConfig && formatConfig.expectedFormat) {
-        // If we have the expected format template, try to use it
-        // This is a fallback if field mappings weren't extracted properly
-        let template = formatConfig.expectedFormat;
         
-        // Replace alert name, date, and description
-        const sampleAlertName = formatConfig.alertName || formatConfig.sampleJson?.xdr_event?.display_name || '';
-        const sampleDate = formatDate(formatConfig.sampleJson?.timestamp || formatConfig.sampleJson?.timestamp_utc);
-        const sampleDesc = formatConfig.sampleJson?.xdr_event?.description || '';
-        
-        template = template.replace(sampleAlertName, alertName);
-        template = template.replace(sampleDate, dateTime);
-        template = template.replace(sampleDesc, description);
-        
-        // Replace sample values with actual values from data
-        if (formatConfig.sampleJson) {
-            const sampleData = formatConfig.sampleJson;
-            formatConfig.fieldMappings?.forEach(mapping => {
-                const sampleValue = getNestedValue(sampleData, mapping.path);
-                const actualValue = getNestedValue(data, mapping.path);
-                if (sampleValue && actualValue) {
-                    template = template.replace(sampleValue, actualValue);
-                }
-            });
-        }
-        
-        output = template;
+        return output.trim();
     }
+    
+    // Fallback: Default format
+    let output = `${alertName}\n\n`;
+    output += `${dateTime}\n\n`;
+    output += `${description}\n\n`;
     
     return output.trim();
 }
