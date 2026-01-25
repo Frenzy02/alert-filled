@@ -100,7 +100,9 @@ export default function AdminPage() {
                 setIpAllowed(false);
                 setIpCheckLoading(false);
                 // Show the detected IP in error message for debugging
-                setError(`Your IP (${data.ip || 'unknown'}) is not in the whitelist. You can still manage IPs with password authentication.`);
+                const ipInfo = `Detected IP: ${data.ip || 'unknown'}\nTrimmed: ${data.ipTrimmed || 'unknown'}\nLowercase: ${data.ipLower || 'unknown'}\n\nAllowed IPs in database: ${data.allowedIPsCount || 0}\n${data.allowedIPs ? data.allowedIPs.join(', ') : 'None'}`;
+                setError(`Your IP is not in the whitelist.\n\n${ipInfo}\n\nYou can still manage IPs with password authentication.`);
+                console.log('IP Check Details:', data);
             } else {
                 setIpAllowed(true);
                 setIpCheckLoading(false);

@@ -48,12 +48,17 @@ export async function GET(request) {
   try {
     const clientIP = getClientIP(request);
     
-    // Default allowed IPs
+    // Default allowed IPs (including empty string for localhost/dev)
     const defaultIPs = ['127.0.0.1', '::1', 'localhost', 'unknown'];
     
-    // Check if IP is in default list
-    if (defaultIPs.includes(clientIP)) {
-      return NextResponse.json({ allowed: true, ip: clientIP });
+    // If IP is empty, null, or unknown, allow access (localhost/development)
+    if (!clientIP || clientIP === '' || clientIP === 'unknown' || defaultIPs.includes(clientIP)) {
+      console.log('✅ Allowing access for localhost/development IP:', clientIP || 'empty (localhost)');
+      return NextResponse.json({ 
+        allowed: true, 
+        ip: clientIP || 'localhost',
+        isLocalhost: true 
+      });
     }
 
     // Fetch allowed IPs from Firebase
@@ -62,28 +67,88 @@ export async function GET(request) {
     const allowedIPs = [];
     
     querySnapshot.forEach((doc) => {
-      allowedIPs.push(doc.data().ip);
+      const ipData = doc.data();
+      if (ipData.ip) {
+        allowedIPs.push(ipData.ip);
+      }
+    });
+    
+    console.log('📥 Fetched from Firebase:', {
+      totalDocs: querySnapshot.size,
+      allowedIPs: allowedIPs,
+      allowedIPsRaw: allowedIPs.map(ip => `"${ip}"`),
+      clientIP: clientIP
     });
 
     // Check if IP is allowed
     const isAllowed = allowedIPs.some(allowedIP => {
-      // Exact match
-      if (clientIP === allowedIP) return true;
-      // CIDR notation support
-      if (allowedIP.includes('/')) {
-        return checkCIDR(clientIP, allowedIP);
+      // Skip if client IP is empty (shouldn't happen here, but safety check)
+      if (!clientIP || clientIP === '') {
+        return false;
       }
+      
+      // Clean both IPs for comparison (remove whitespace, convert to lowercase)
+      const cleanClientIP = clientIP.trim().toLowerCase();
+      const cleanAllowedIP = allowedIP.trim().toLowerCase();
+      
+      // Skip if allowed IP is empty
+      if (!cleanAllowedIP || cleanAllowedIP === '') {
+        return false;
+      }
+      
+      // Exact match (case-insensitive, trimmed)
+      if (cleanClientIP === cleanAllowedIP) {
+        console.log(`✅ IP match found: ${clientIP} === ${allowedIP}`);
+        return true;
+      }
+      
+      // CIDR notation support
+      if (cleanAllowedIP.includes('/')) {
+        const result = checkCIDR(cleanClientIP, cleanAllowedIP);
+        if (result) {
+          console.log(`✅ CIDR match found: ${clientIP} in ${allowedIP}`);
+        }
+        return result;
+      }
+      
       return false;
     });
 
     if (!isAllowed) {
+      // Log for debugging
+      console.log('❌ IP not allowed:', clientIP);
+      console.log('📋 Allowed IPs from Firebase:', allowedIPs);
+      console.log('🔍 Comparison details:', {
+        clientIP,
+        clientIPTrimmed: clientIP.trim(),
+        clientIPLower: clientIP.trim().toLowerCase(),
+        allowedIPs,
+        allowedIPsTrimmed: allowedIPs.map(ip => ip.trim()),
+        allowedIPsLower: allowedIPs.map(ip => ip.trim().toLowerCase())
+      });
+      
       return NextResponse.json(
-        { allowed: false, ip: clientIP, message: 'IP address not authorized' },
+        { 
+          allowed: false, 
+          ip: clientIP,
+          ipTrimmed: clientIP.trim(),
+          ipLower: clientIP.trim().toLowerCase(),
+          message: 'IP address not authorized', 
+          allowedIPs: allowedIPs,
+          allowedIPsTrimmed: allowedIPs.map(ip => ip.trim()),
+          allowedIPsCount: allowedIPs.length
+        },
         { status: 403 }
       );
     }
 
-    return NextResponse.json({ allowed: true, ip: clientIP });
+    console.log(`✅ Access granted for IP: ${clientIP}`);
+    return NextResponse.json({ 
+      allowed: true, 
+      ip: clientIP,
+      ipTrimmed: clientIP.trim(),
+      allowedIPs: allowedIPs 
+    });
   } catch (error) {
     console.error('Error checking IP:', error);
     // On error, allow access (fail open) - you might want to change this
