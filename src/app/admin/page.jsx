@@ -350,13 +350,7 @@ export default function AdminPage() {
                                 Add IP
                             </button>
                         </div>
-                        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                            💡 <strong>Tip:</strong> Regular IPs ay automatic na i-convert sa /24 CIDR range (hal. 139.135.192.120 → 139.135.192.0/24)
-                            <br />
-                            • Maglagay ng IP: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">139.135.192.120</code> → Auto-convert sa <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">139.135.192.0/24</code>
-                            <br />
-                            • O maglagay ng CIDR diretso: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">192.168.1.0/24</code>
-                        </p>
+                      
                     </div>
 
                     {/* IP List */}

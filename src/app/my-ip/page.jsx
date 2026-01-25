@@ -86,28 +86,6 @@ export default function MyIPPage() {
                                         </p>
                                     )}
                                 </div>
-                                
-                                {/* Show /24 CIDR version */}
-                                {ipInfo.selectedIP && ipInfo.selectedIP !== 'Unknown' && !ipInfo.selectedIP.includes('/') && (() => {
-                                    const parts = ipInfo.selectedIP.split('.');
-                                    if (parts.length === 4) {
-                                        const cidr24 = `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
-                                        return (
-                                            <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-300 dark:border-yellow-700">
-                                                <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-300 mb-2">
-                                                    💡 Suggested CIDR Range (/24):
-                                                </p>
-                                                <p className="text-lg font-mono font-bold text-yellow-700 dark:text-yellow-400 text-center break-all">
-                                                    {cidr24}
-                                                </p>
-                                                <p className="text-xs text-yellow-600 dark:text-yellow-500 text-center mt-2">
-                                                    I-whitelist ang /24 range na ito para masakop ang buong IP range (256 IPs)
-                                                </p>
-                                            </div>
-                                        );
-                                    }
-                                    return null;
-                                })()}
                             </div>
 
                             {/* All Detected IPs */}

@@ -398,7 +398,42 @@ export default function Home() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [showAddFormatModal, setShowAddFormatModal] = useState(false);
+    const [savedAlertFormats, setSavedAlertFormats] = useState([]);
+    const [loadingFormats, setLoadingFormats] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
     const pasteTimeoutRef = useRef(null);
+
+    // Fetch saved alert formats from Firebase
+    useEffect(() => {
+        const fetchSavedFormats = async () => {
+            try {
+                setLoadingFormats(true);
+                const formatsQuery = query(collection(db, 'alertFormats'));
+                const formatsSnapshot = await getDocs(formatsQuery);
+                
+                const formats = [];
+                formatsSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    formats.push({
+                        id: doc.id,
+                        alertName: data.alertName || 'Unknown Alert',
+                        eventName: data.eventName || '',
+                        createdAt: data.createdAt || ''
+                    });
+                });
+                
+                // Sort by alert name
+                formats.sort((a, b) => a.alertName.localeCompare(b.alertName));
+                setSavedAlertFormats(formats);
+            } catch (err) {
+                console.error('Error fetching saved formats:', err);
+            } finally {
+                setLoadingFormats(false);
+            }
+        };
+
+        fetchSavedFormats();
+    }, [showAddFormatModal]); // Refresh when modal opens/closes
 
     const handleConvert = async () => {
         const input = jsonInput.trim();
@@ -532,6 +567,69 @@ export default function Home() {
                         + Add New Alert Format
                     </button>
                 </header>
+
+                {/* Saved Alert Formats List */}
+                <div className="px-6 md:px-8 pt-6 pb-4">
+                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-lg border-2 border-purple-200 dark:border-purple-800 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                <span>📋 Saved Alert Formats</span>
+                                <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
+                                    ({savedAlertFormats.length})
+                                </span>
+                            </h2>
+                        </div>
+                        
+                        {/* Search Input */}
+                        <div className="mb-3">
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Search alert formats..."
+                                className="w-full px-4 py-2 border-2 border-purple-300 dark:border-purple-700 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
+                            />
+                        </div>
+
+                        {loadingFormats ? (
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
+                        ) : savedAlertFormats.length === 0 ? (
+                            <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                                No alert formats saved yet. Click "Add New Alert Format" to create one.
+                            </p>
+                        ) : (() => {
+                            // Filter formats based on search query
+                            const filteredFormats = savedAlertFormats.filter((format) => {
+                                const query = searchQuery.toLowerCase();
+                                return (
+                                    format.alertName.toLowerCase().includes(query) ||
+                                    (format.eventName && format.eventName.toLowerCase().includes(query))
+                                );
+                            });
+
+                            if (filteredFormats.length === 0) {
+                                return (
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                                        No alert formats found matching "{searchQuery}"
+                                    </p>
+                                );
+                            }
+
+                            return (
+                                <div className="flex flex-wrap gap-2">
+                                    {filteredFormats.map((format) => (
+                                        <div
+                                            key={format.id}
+                                            className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-purple-300 dark:border-purple-700 rounded-lg text-sm font-medium text-purple-700 dark:text-purple-300 shadow-sm hover:shadow-md transition-shadow"
+                                        >
+                                            {format.alertName}
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
+                    </div>
+                </div>
 
                 {/* Main Content */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 md:p-8">
