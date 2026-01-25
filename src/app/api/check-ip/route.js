@@ -2,11 +2,42 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query } from 'firebase/firestore';
 
+// Helper function to check if IP is IPv4
+function isIPv4(ip) {
+  if (!ip) return false;
+  // IPv4 pattern: 4 groups of 1-3 digits separated by dots
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+  return ipv4Pattern.test(ip);
+}
+
+// Helper function to extract IPv4 from a string (may contain multiple IPs)
+function extractIPv4(ipString) {
+  if (!ipString) return null;
+  
+  // Split by comma to handle multiple IPs
+  const ips = ipString.split(',').map(ip => ip.trim());
+  
+  // Try to find IPv4 in the list
+  // Usually the first IP is the client, but check all
+  for (const ip of ips) {
+    // Remove port if present
+    const cleanIP = ip.split(':')[0].trim();
+    // Remove brackets from IPv6
+    const finalIP = cleanIP.replace(/^\[|\]$/g, '');
+    
+    // Check if it's IPv4
+    if (isIPv4(finalIP)) {
+      return finalIP;
+    }
+  }
+  
+  return null;
+}
+
 function getClientIP(request) {
-  // Vercel uses specific headers for IP addresses
-  // Priority order for Vercel:
-  // 1. x-vercel-forwarded-for (Vercel's header)
-  // 2. x-forwarded-for (standard proxy header)
+  // Priority order for IP detection (IPv4 only):
+  // 1. x-vercel-forwarded-for (Vercel's header - most reliable)
+  // 2. x-forwarded-for (standard proxy header - first IP is usually client)
   // 3. x-real-ip (some proxies)
   // 4. cf-connecting-ip (Cloudflare)
   
@@ -24,43 +55,68 @@ function getClientIP(request) {
     'request.ip': request.ip
   });
   
-  // Try different headers in order of priority
+  // Try different headers in order of priority, extract IPv4 only
   let ip = null;
   
-  // First try Vercel-specific header
+  // First try Vercel-specific header (most reliable for Vercel)
   if (vercelIP) {
-    ip = vercelIP.split(',')[0].trim();
+    ip = extractIPv4(vercelIP);
+    if (ip) {
+      console.log('✅ Found IPv4 in x-vercel-forwarded-for:', ip);
+    }
   }
-  // Then try Cloudflare
-  else if (cfConnectingIP) {
-    ip = cfConnectingIP.split(',')[0].trim();
+  
+  // Then try Cloudflare header
+  if (!ip && cfConnectingIP) {
+    ip = extractIPv4(cfConnectingIP);
+    if (ip) {
+      console.log('✅ Found IPv4 in cf-connecting-ip:', ip);
+    }
   }
+  
   // Then try standard forwarded header
-  else if (forwarded) {
-    ip = forwarded.split(',')[0].trim();
+  // x-forwarded-for format: "client, proxy1, proxy2"
+  // First IP is usually the original client
+  if (!ip && forwarded) {
+    ip = extractIPv4(forwarded);
+    if (ip) {
+      console.log('✅ Found IPv4 in x-forwarded-for:', ip);
+    }
   }
+  
   // Then try real IP
-  else if (realIP) {
-    ip = realIP.trim();
-  }
-  // Fallback to request.ip
-  else if (request.ip) {
-    ip = request.ip;
-  }
-  
-  // Clean up the IP (remove port if present)
-  if (ip && ip !== 'unknown') {
-    ip = ip.split(':')[0].trim();
-    // Remove any brackets from IPv6
-    ip = ip.replace(/^\[|\]$/g, '');
+  if (!ip && realIP) {
+    ip = extractIPv4(realIP);
+    if (ip) {
+      console.log('✅ Found IPv4 in x-real-ip:', ip);
+    }
   }
   
-  // If still no IP, return empty string (localhost)
+  // Fallback to request.ip (if it's IPv4)
+  if (!ip && request.ip) {
+    const cleanIP = request.ip.split(':')[0].trim().replace(/^\[|\]$/g, '');
+    if (isIPv4(cleanIP)) {
+      ip = cleanIP;
+      console.log('✅ Found IPv4 in request.ip:', ip);
+    }
+  }
+  
+  // If we got an IP but it's not IPv4, log it but don't use it
+  if (!ip) {
+    // Check if we have any IPs but they're IPv6
+    const allIPs = [vercelIP, forwarded, realIP, cfConnectingIP, request.ip].filter(Boolean);
+    if (allIPs.length > 0) {
+      console.warn('⚠️ Found IPs but none are IPv4:', allIPs);
+    }
+  }
+  
+  // If still no IPv4, return empty string (localhost)
   if (!ip || ip === 'unknown') {
     ip = '';
+    console.log('📍 No IPv4 detected, using empty (localhost)');
+  } else {
+    console.log('📍 Final Detected IPv4:', ip);
   }
-  
-  console.log('📍 Final Detected IP:', ip || 'empty (localhost)');
   
   return ip;
 }
@@ -192,8 +248,25 @@ export async function GET(request) {
       console.log('🔒 Detected private/local IP:', clientIP);
     }
 
+    // Validate that client IP is IPv4
+    if (!isIPv4(clientIP)) {
+      console.log('❌ Client IP is not IPv4:', clientIP);
+      return NextResponse.json(
+        { 
+          allowed: false, 
+          ip: clientIP,
+          ipTrimmed: clientIP.trim(),
+          ipLower: clientIP.trim().toLowerCase(),
+          message: 'Only IPv4 addresses are supported', 
+          allowedIPs: allowedIPs,
+          allowedIPsCount: allowedIPs.length
+        },
+        { status: 403 }
+      );
+    }
+    
     // Strict static IP checking - only allow if IP is explicitly whitelisted
-    // No automatic allowances, no dynamic IPs - only static whitelisted IPs
+    // No automatic allowances, no dynamic IPs - only static whitelisted IPv4 IPs
     const isAllowed = allowedIPs.some((allowedIP, index) => {
       // Skip if client IP is empty (shouldn't happen here, but safety check)
       if (!clientIP || clientIP === '') {
@@ -211,29 +284,42 @@ export async function GET(request) {
         return false;
       }
       
+      // Skip if allowed IP is not IPv4 (unless it's CIDR notation)
+      if (!cleanAllowedIP.includes('/') && !isIPv4(cleanAllowedIP)) {
+        console.log(`⏭️ Skipping check ${index}: allowed IP is not IPv4: ${cleanAllowedIP}`);
+        return false;
+      }
+      
       // Log each comparison attempt
-      console.log(`🔍 Strict Static IP Check [${index}]: "${cleanClientIP}" vs "${cleanAllowedIP}"`);
+      console.log(`🔍 Strict Static IPv4 Check [${index}]: "${cleanClientIP}" vs "${cleanAllowedIP}"`);
       console.log(`   Client IP (original): "${clientIP}"`);
       console.log(`   Allowed IP (original): "${allowedIP}"`);
       
       // Exact match only (case-insensitive, trimmed) - no partial matches
       if (cleanClientIP === cleanAllowedIP) {
-        console.log(`✅ EXACT STATIC IP MATCH! ${clientIP} === ${allowedIP}`);
+        console.log(`✅ EXACT STATIC IPv4 MATCH! ${clientIP} === ${allowedIP}`);
         return true;
       }
       
-      // CIDR notation support (for static IP ranges only)
+      // CIDR notation support (for static IPv4 IP ranges only)
       if (cleanAllowedIP.includes('/')) {
+        // Validate CIDR is IPv4
+        const [network] = cleanAllowedIP.split('/');
+        if (!isIPv4(network)) {
+          console.log(`⏭️ Skipping CIDR check ${index}: CIDR network is not IPv4: ${network}`);
+          return false;
+        }
+        
         const result = checkCIDR(cleanClientIP, cleanAllowedIP);
         if (result) {
-          console.log(`✅ CIDR RANGE MATCH! ${clientIP} is within static range ${allowedIP}`);
+          console.log(`✅ CIDR RANGE MATCH! ${clientIP} is within static IPv4 range ${allowedIP}`);
         } else {
           console.log(`❌ CIDR no match: ${clientIP} not in static range ${allowedIP}`);
         }
         return result;
       }
       
-      console.log(`❌ No match: "${cleanClientIP}" !== "${cleanAllowedIP}" (strict static IP check)`);
+      console.log(`❌ No match: "${cleanClientIP}" !== "${cleanAllowedIP}" (strict static IPv4 check)`);
       return false;
     });
 
