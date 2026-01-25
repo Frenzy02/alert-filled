@@ -4,23 +4,63 @@ import { collection, getDocs, query } from 'firebase/firestore';
 
 function getClientIP(request) {
   // Vercel uses specific headers for IP addresses
+  // Priority order for Vercel:
+  // 1. x-vercel-forwarded-for (Vercel's header)
+  // 2. x-forwarded-for (standard proxy header)
+  // 3. x-real-ip (some proxies)
+  // 4. cf-connecting-ip (Cloudflare)
+  
   const forwarded = request.headers.get('x-forwarded-for');
   const vercelIP = request.headers.get('x-vercel-forwarded-for');
   const realIP = request.headers.get('x-real-ip');
-  const cfConnectingIP = request.headers.get('cf-connecting-ip'); // Cloudflare
+  const cfConnectingIP = request.headers.get('cf-connecting-ip');
+  
+  // Log all headers for debugging
+  console.log('🔍 IP Detection Headers:', {
+    'x-vercel-forwarded-for': vercelIP,
+    'x-forwarded-for': forwarded,
+    'x-real-ip': realIP,
+    'cf-connecting-ip': cfConnectingIP,
+    'request.ip': request.ip
+  });
   
   // Try different headers in order of priority
-  let ip = vercelIP || 
-           cfConnectingIP ||
-           (forwarded ? forwarded.split(',')[0].trim() : null) ||
-           realIP ||
-           request.ip ||
-           'unknown';
+  let ip = null;
+  
+  // First try Vercel-specific header
+  if (vercelIP) {
+    ip = vercelIP.split(',')[0].trim();
+  }
+  // Then try Cloudflare
+  else if (cfConnectingIP) {
+    ip = cfConnectingIP.split(',')[0].trim();
+  }
+  // Then try standard forwarded header
+  else if (forwarded) {
+    ip = forwarded.split(',')[0].trim();
+  }
+  // Then try real IP
+  else if (realIP) {
+    ip = realIP.trim();
+  }
+  // Fallback to request.ip
+  else if (request.ip) {
+    ip = request.ip;
+  }
   
   // Clean up the IP (remove port if present)
   if (ip && ip !== 'unknown') {
     ip = ip.split(':')[0].trim();
+    // Remove any brackets from IPv6
+    ip = ip.replace(/^\[|\]$/g, '');
   }
+  
+  // If still no IP, return empty string (localhost)
+  if (!ip || ip === 'unknown') {
+    ip = '';
+  }
+  
+  console.log('📍 Final Detected IP:', ip || 'empty (localhost)');
   
   return ip;
 }
