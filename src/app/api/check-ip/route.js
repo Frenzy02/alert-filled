@@ -91,16 +91,7 @@ export async function GET(request) {
     // Default allowed IPs (including empty string for localhost/dev)
     const defaultIPs = ['127.0.0.1', '::1', 'localhost', 'unknown'];
     
-    // If IP is empty, null, or unknown, allow access (localhost/development)
-    if (!clientIP || clientIP === '' || clientIP === 'unknown' || defaultIPs.includes(clientIP)) {
-      console.log('✅ Allowing access for localhost/development IP:', clientIP || 'empty (localhost)');
-      return NextResponse.json({ 
-        allowed: true, 
-        ip: clientIP || 'localhost',
-        isLocalhost: true 
-      });
-    }
-
+    // Fetch allowed IPs from Firebase first (always fetch to show in UI)
     // Fetch allowed IPs from Firebase
     const q = query(collection(db, 'allowedIPs'));
     const querySnapshot = await getDocs(q);
@@ -120,10 +111,26 @@ export async function GET(request) {
       clientIP: clientIP
     });
 
-    // Check if IP is allowed
-    const isAllowed = allowedIPs.some(allowedIP => {
+    // If IP is empty, null, or unknown, allow access (localhost/development)
+    // But still return the allowed IPs list for display
+    if (!clientIP || clientIP === '' || clientIP === 'unknown' || defaultIPs.includes(clientIP)) {
+      console.log('✅ Allowing access for localhost/development IP:', clientIP || 'empty (localhost)');
+      return NextResponse.json({ 
+        allowed: true, 
+        ip: clientIP || 'localhost',
+        ipTrimmed: clientIP || 'localhost',
+        ipLower: (clientIP || 'localhost').toLowerCase(),
+        isLocalhost: true,
+        allowedIPs: allowedIPs,
+        allowedIPsCount: allowedIPs.length
+      });
+    }
+
+    // Check if IP is allowed (improved matching with detailed logging)
+    const isAllowed = allowedIPs.some((allowedIP, index) => {
       // Skip if client IP is empty (shouldn't happen here, but safety check)
       if (!clientIP || clientIP === '') {
+        console.log(`⏭️ Skipping check ${index}: client IP is empty`);
         return false;
       }
       
@@ -133,12 +140,18 @@ export async function GET(request) {
       
       // Skip if allowed IP is empty
       if (!cleanAllowedIP || cleanAllowedIP === '') {
+        console.log(`⏭️ Skipping check ${index}: allowed IP is empty`);
         return false;
       }
       
+      // Log each comparison attempt
+      console.log(`🔍 Comparing [${index}]: "${cleanClientIP}" vs "${cleanAllowedIP}"`);
+      console.log(`   Original client: "${clientIP}"`);
+      console.log(`   Original allowed: "${allowedIP}"`);
+      
       // Exact match (case-insensitive, trimmed)
       if (cleanClientIP === cleanAllowedIP) {
-        console.log(`✅ IP match found: ${clientIP} === ${allowedIP}`);
+        console.log(`✅ EXACT MATCH FOUND! ${clientIP} === ${allowedIP}`);
         return true;
       }
       
@@ -146,11 +159,14 @@ export async function GET(request) {
       if (cleanAllowedIP.includes('/')) {
         const result = checkCIDR(cleanClientIP, cleanAllowedIP);
         if (result) {
-          console.log(`✅ CIDR match found: ${clientIP} in ${allowedIP}`);
+          console.log(`✅ CIDR MATCH FOUND! ${clientIP} in ${allowedIP}`);
+        } else {
+          console.log(`❌ CIDR no match: ${clientIP} not in ${allowedIP}`);
         }
         return result;
       }
       
+      console.log(`❌ No match: "${cleanClientIP}" !== "${cleanAllowedIP}"`);
       return false;
     });
 

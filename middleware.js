@@ -31,8 +31,9 @@ export function middleware(request) {
     ip = ip.split(':')[0].trim();
   }
 
-  // Allow access to admin page and API routes
+  // Allow access to admin page, my-ip page, and API routes
   if (request.nextUrl.pathname.startsWith('/admin') || 
+      request.nextUrl.pathname.startsWith('/my-ip') ||
       request.nextUrl.pathname.startsWith('/api')) {
     return NextResponse.next();
   }
