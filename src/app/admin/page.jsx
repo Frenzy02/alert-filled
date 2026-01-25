@@ -1,0 +1,252 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, addDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
+
+export default function AdminPage() {
+    const [allowedIPs, setAllowedIPs] = useState([]);
+    const [newIP, setNewIP] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+    const [ipCheckLoading, setIpCheckLoading] = useState(true);
+    const [ipAllowed, setIpAllowed] = useState(false);
+    const router = useRouter();
+
+    // Check IP access first
+    useEffect(() => {
+        checkIPAccess();
+    }, []);
+
+    // Fetch allowed IPs from Firebase
+    const fetchAllowedIPs = async () => {
+        try {
+            setLoading(true);
+            const q = query(collection(db, 'allowedIPs'), orderBy('createdAt', 'desc'));
+            const querySnapshot = await getDocs(q);
+            const ips = [];
+            querySnapshot.forEach((docSnap) => {
+                ips.push({
+                    id: docSnap.id,
+                    ...docSnap.data()
+                });
+            });
+            setAllowedIPs(ips);
+            setError('');
+        } catch (err) {
+            setError('Failed to fetch IP addresses: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const checkIPAccess = async () => {
+        try {
+            const response = await fetch('/api/check-ip');
+            const data = await response.json();
+            
+            if (response.status === 403 || !data.allowed) {
+                setIpAllowed(false);
+                setIpCheckLoading(false);
+            } else {
+                setIpAllowed(true);
+                setIpCheckLoading(false);
+                // Fetch IPs after access is confirmed
+                await fetchAllowedIPs();
+            }
+        } catch (error) {
+            console.error('Error checking IP:', error);
+            setIpAllowed(false);
+            setIpCheckLoading(false);
+        }
+    };
+
+    const handleAddIP = async () => {
+        if (!newIP.trim()) {
+            setError('Please enter an IP address');
+            return;
+        }
+
+        // Basic IP validation
+        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+        const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
+        
+        if (!ipRegex.test(newIP.trim()) && !ipv6Regex.test(newIP.trim()) && newIP.trim() !== 'localhost') {
+            setError('Invalid IP address format. Use IPv4 (e.g., 192.168.1.1) or CIDR (e.g., 192.168.1.0/24)');
+            return;
+        }
+
+        try {
+            await addDoc(collection(db, 'allowedIPs'), {
+                ip: newIP.trim(),
+                createdAt: new Date().toISOString(),
+                createdBy: 'admin' // You can add user authentication here
+            });
+            
+            setNewIP('');
+            setSuccess('IP address added successfully!');
+            setError('');
+            setTimeout(() => setSuccess(''), 3000);
+            fetchAllowedIPs();
+        } catch (err) {
+            setError('Failed to add IP address: ' + err.message);
+        }
+    };
+
+    const handleDeleteIP = async (id) => {
+        if (!confirm('Are you sure you want to remove this IP address?')) {
+            return;
+        }
+
+        try {
+            await deleteDoc(doc(db, 'allowedIPs', id));
+            setSuccess('IP address removed successfully!');
+            setError('');
+            setTimeout(() => setSuccess(''), 3000);
+            fetchAllowedIPs();
+        } catch (err) {
+            setError('Failed to remove IP address: ' + err.message);
+        }
+    };
+
+    const formatDate = (dateString) => {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleString();
+    };
+
+    // Show loading or access denied
+    if (ipCheckLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+                    <p className="mt-4 text-gray-600">Verifying access...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!ipAllowed) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
+                    <h1 className="text-3xl font-bold text-red-600 mb-4">Access Denied</h1>
+                    <p className="text-gray-700 mb-4">
+                        Your IP address is not authorized to access the admin page.
+                    </p>
+                    <p className="text-sm text-gray-500 mb-4">
+                        Only authorized IP addresses can manage the IP whitelist.
+                    </p>
+                    <button
+                        onClick={() => router.push('/')}
+                        className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all"
+                    >
+                        Go to Home
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 p-4 md:p-8">
+            <div className="max-w-4xl mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
+                {/* Header */}
+                <header className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-8 text-center">
+                    <h1 className="text-4xl md:text-5xl font-bold mb-2">🔐 IP Access Control</h1>
+                    <p className="text-lg opacity-90">Manage allowed IP addresses for the application</p>
+                </header>
+
+                {/* Main Content */}
+                <div className="p-6 md:p-8">
+                    {/* Add IP Section */}
+                    <div className="mb-8">
+                        <h2 className="text-2xl font-bold mb-4 text-gray-700 dark:text-gray-300">Add New IP Address</h2>
+                        <div className="flex gap-3">
+                            <input
+                                type="text"
+                                value={newIP}
+                                onChange={(e) => setNewIP(e.target.value)}
+                                placeholder="Enter IP address (e.g., 192.168.1.1 or 192.168.1.0/24)"
+                                className="flex-1 p-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-800 dark:text-gray-100"
+                                onKeyPress={(e) => e.key === 'Enter' && handleAddIP()}
+                            />
+                            <button
+                                onClick={handleAddIP}
+                                className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-800 transition-all transform hover:-translate-y-0.5 hover:shadow-lg"
+                            >
+                                Add IP
+                            </button>
+                        </div>
+                        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                            Supports IPv4 addresses and CIDR notation (e.g., 192.168.1.0/24)
+                        </p>
+                    </div>
+
+                    {/* IP List */}
+                    <div>
+                        <h2 className="text-2xl font-bold mb-4 text-gray-700 dark:text-gray-300">
+                            Allowed IP Addresses ({allowedIPs.length})
+                        </h2>
+                        
+                        {loading ? (
+                            <div className="text-center py-8 text-gray-500">Loading...</div>
+                        ) : allowedIPs.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                                No IP addresses configured. Add one above to get started.
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full border-collapse border border-gray-300 dark:border-gray-600">
+                                    <thead>
+                                        <tr className="bg-gray-100 dark:bg-gray-800">
+                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">IP Address</th>
+                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">Added On</th>
+                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {allowedIPs.map((item) => (
+                                            <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                                                <td className="border border-gray-300 dark:border-gray-600 p-3 font-mono">
+                                                    {item.ip}
+                                                </td>
+                                                <td className="border border-gray-300 dark:border-gray-600 p-3">
+                                                    {formatDate(item.createdAt)}
+                                                </td>
+                                                <td className="border border-gray-300 dark:border-gray-600 p-3 text-center">
+                                                    <button
+                                                        onClick={() => handleDeleteIP(item.id)}
+                                                        className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-all"
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Messages */}
+                    {error && (
+                        <div className="mt-6 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg">
+                            {error}
+                        </div>
+                    )}
+                    {success && (
+                        <div className="mt-6 p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-700 text-green-700 dark:text-green-300 rounded-lg">
+                            {success}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
