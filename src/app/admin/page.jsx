@@ -120,26 +120,86 @@ export default function AdminPage() {
         }
     };
 
+    // Helper function to validate IP address
+    const isValidIP = (ip) => {
+        const trimmed = ip.trim();
+        
+        // Allow localhost
+        if (trimmed === 'localhost') return true;
+        
+        // IPv4 validation (with CIDR support)
+        const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+        if (ipv4Regex.test(trimmed)) {
+            // Check if it's a valid IP (each octet 0-255)
+            const parts = trimmed.split('/')[0].split('.');
+            const valid = parts.every(part => {
+                const num = parseInt(part, 10);
+                return num >= 0 && num <= 255;
+            });
+            
+            // Check CIDR prefix if present
+            if (trimmed.includes('/')) {
+                const prefix = parseInt(trimmed.split('/')[1], 10);
+                if (prefix < 0 || prefix > 32) return false;
+            }
+            
+            return valid;
+        }
+        
+        // IPv6 validation (basic)
+        const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
+        if (ipv6Regex.test(trimmed)) return true;
+        
+        return false;
+    };
+
+    // Helper function to check if IP is a private/local IP
+    const isPrivateIP = (ip) => {
+        if (!ip || ip === 'localhost') return true;
+        
+        const parts = ip.split('/')[0].split('.');
+        if (parts.length !== 4) return false;
+        
+        const [a, b, c] = parts.map(Number);
+        
+        // 10.0.0.0/8
+        if (a === 10) return true;
+        // 172.16.0.0/12
+        if (a === 172 && b >= 16 && b <= 31) return true;
+        // 192.168.0.0/16
+        if (a === 192 && b === 168) return true;
+        // 127.0.0.0/8 (localhost)
+        if (a === 127) return true;
+        
+        return false;
+    };
+
     const handleAddIP = async () => {
         if (!newIP.trim()) {
             setError('Please enter an IP address');
             return;
         }
 
-        // Basic IP validation
-        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-        const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
-        
-        if (!ipRegex.test(newIP.trim()) && !ipv6Regex.test(newIP.trim()) && newIP.trim() !== 'localhost') {
+        // Validate IP format
+        if (!isValidIP(newIP.trim())) {
             setError('Invalid IP address format. Use IPv4 (e.g., 192.168.1.1) or CIDR (e.g., 192.168.1.0/24)');
+            return;
+        }
+
+        // Check for duplicates
+        const trimmedIP = newIP.trim();
+        const isDuplicate = allowedIPs.some(item => item.ip === trimmedIP);
+        if (isDuplicate) {
+            setError('This IP address is already in the whitelist');
             return;
         }
 
         try {
             await addDoc(collection(db, 'allowedIPs'), {
-                ip: newIP.trim(),
+                ip: trimmedIP,
                 createdAt: new Date().toISOString(),
-                createdBy: 'admin' // You can add user authentication here
+                createdBy: 'admin',
+                isPrivate: isPrivateIP(trimmedIP) // Mark if it's a private/local IP
             });
             
             setNewIP('');
@@ -270,7 +330,13 @@ export default function AdminPage() {
                             </button>
                         </div>
                         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                            Supports IPv4 addresses and CIDR notation (e.g., 192.168.1.0/24)
+                            Supports IPv4 addresses and CIDR notation. Examples:
+                            <br />
+                            • Static local IP: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">192.168.1.100</code>
+                            <br />
+                            • Local network range: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">192.168.1.0/24</code>
+                            <br />
+                            • Public IP: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">203.0.113.45</code>
                         </p>
                     </div>
 

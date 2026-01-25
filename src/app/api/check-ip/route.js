@@ -111,6 +111,27 @@ export async function GET(request) {
       clientIP: clientIP
     });
 
+    // Helper function to check if IP is a private/local IP
+    const isPrivateIP = (ip) => {
+      if (!ip || ip === 'localhost' || ip === 'unknown') return true;
+      
+      const parts = ip.split('/')[0].split('.');
+      if (parts.length !== 4) return false;
+      
+      const [a, b] = parts.map(Number);
+      
+      // 10.0.0.0/8
+      if (a === 10) return true;
+      // 172.16.0.0/12
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      // 192.168.0.0/16
+      if (a === 192 && b === 168) return true;
+      // 127.0.0.0/8 (localhost)
+      if (a === 127) return true;
+      
+      return false;
+    };
+
     // If IP is empty, null, or unknown, allow access (localhost/development)
     // But still return the allowed IPs list for display
     if (!clientIP || clientIP === '' || clientIP === 'unknown' || defaultIPs.includes(clientIP)) {
@@ -124,6 +145,11 @@ export async function GET(request) {
         allowedIPs: allowedIPs,
         allowedIPsCount: allowedIPs.length
       });
+    }
+
+    // Log if it's a private IP for debugging
+    if (isPrivateIP(clientIP)) {
+      console.log('🔒 Detected private/local IP:', clientIP);
     }
 
     // Check if IP is allowed (improved matching with detailed logging)
