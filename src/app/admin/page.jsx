@@ -13,12 +13,28 @@ export default function AdminPage() {
     const [success, setSuccess] = useState('');
     const [ipCheckLoading, setIpCheckLoading] = useState(true);
     const [ipAllowed, setIpAllowed] = useState(false);
+    const [password, setPassword] = useState('');
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [showPasswordForm, setShowPasswordForm] = useState(false);
     const router = useRouter();
 
-    // Check IP access first
+    // Check if already authenticated
     useEffect(() => {
-        checkIPAccess();
+        const authStatus = localStorage.getItem('admin_authenticated');
+        if (authStatus === 'true') {
+            setIsAuthenticated(true);
+            setShowPasswordForm(false);
+        } else {
+            setShowPasswordForm(true);
+        }
     }, []);
+
+    // Check IP access if authenticated
+    useEffect(() => {
+        if (isAuthenticated) {
+            checkIPAccess();
+        }
+    }, [isAuthenticated]);
 
     // Fetch allowed IPs from Firebase
     const fetchAllowedIPs = async () => {
@@ -42,6 +58,36 @@ export default function AdminPage() {
         }
     };
 
+    const handlePasswordSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            const response = await fetch('/api/admin-auth', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ password }),
+            });
+            
+            const data = await response.json();
+            
+            if (data.authenticated) {
+                setIsAuthenticated(true);
+                setShowPasswordForm(false);
+                localStorage.setItem('admin_authenticated', 'true');
+                setPassword('');
+                setError('');
+                // Now check IP access
+                checkIPAccess();
+            } else {
+                setError('Incorrect password. Please try again.');
+                setPassword('');
+            }
+        } catch (error) {
+            setError('Error authenticating: ' + error.message);
+        }
+    };
+
     const checkIPAccess = async () => {
         try {
             const response = await fetch('/api/check-ip');
@@ -54,7 +100,7 @@ export default function AdminPage() {
                 setIpAllowed(false);
                 setIpCheckLoading(false);
                 // Show the detected IP in error message for debugging
-                setError(`Access Denied. Your detected IP: ${data.ip || 'unknown'}. Please add this IP to the allowed list.`);
+                setError(`Your IP (${data.ip || 'unknown'}) is not in the whitelist. You can still manage IPs with password authentication.`);
             } else {
                 setIpAllowed(true);
                 setIpCheckLoading(false);
@@ -65,7 +111,10 @@ export default function AdminPage() {
             console.error('Error checking IP:', error);
             setIpAllowed(false);
             setIpCheckLoading(false);
-            setError('Error checking IP access: ' + error.message);
+            // Don't show error if authenticated with password
+            if (isAuthenticated) {
+                await fetchAllowedIPs();
+            }
         }
     };
 
@@ -123,8 +172,44 @@ export default function AdminPage() {
         return date.toLocaleString();
     };
 
-    // Show loading or access denied
-    if (ipCheckLoading) {
+    // Show password form if not authenticated
+    if (showPasswordForm) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 p-4">
+                <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-8 max-w-md w-full">
+                    <h1 className="text-3xl font-bold text-center mb-2 text-gray-700 dark:text-gray-300">🔐 Admin Access</h1>
+                    <p className="text-center text-gray-500 dark:text-gray-400 mb-6">
+                        Enter password to access admin panel
+                    </p>
+                    <form onSubmit={handlePasswordSubmit}>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="Enter admin password"
+                            className="w-full p-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-800 dark:text-gray-100 mb-4"
+                            required
+                            autoFocus
+                        />
+                        <button
+                            type="submit"
+                            className="w-full bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-800 transition-all"
+                        >
+                            Login
+                        </button>
+                    </form>
+                    {error && (
+                        <div className="mt-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg text-sm">
+                            {error}
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // Show loading while checking IP
+    if (ipCheckLoading && isAuthenticated) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-100">
                 <div className="text-center">
@@ -135,35 +220,30 @@ export default function AdminPage() {
         );
     }
 
-    if (!ipAllowed) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-100">
-                <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
-                    <h1 className="text-3xl font-bold text-red-600 mb-4">Access Denied</h1>
-                    <p className="text-gray-700 mb-4">
-                        Your IP address is not authorized to access the admin page.
-                    </p>
-                    <p className="text-sm text-gray-500 mb-4">
-                        Only authorized IP addresses can manage the IP whitelist.
-                    </p>
-                    <button
-                        onClick={() => router.push('/')}
-                        className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all"
-                    >
-                        Go to Home
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
     return (
         <div className="min-h-screen bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 p-4 md:p-8">
             <div className="max-w-4xl mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
                 {/* Header */}
                 <header className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-8 text-center">
-                    <h1 className="text-4xl md:text-5xl font-bold mb-2">🔐 IP Access Control</h1>
+                    <div className="flex justify-between items-center mb-2">
+                        <h1 className="text-4xl md:text-5xl font-bold">🔐 IP Access Control</h1>
+                        <button
+                            onClick={() => {
+                                localStorage.removeItem('admin_authenticated');
+                                setIsAuthenticated(false);
+                                setShowPasswordForm(true);
+                            }}
+                            className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm transition-all"
+                        >
+                            Logout
+                        </button>
+                    </div>
                     <p className="text-lg opacity-90">Manage allowed IP addresses for the application</p>
+                    {!ipAllowed && isAuthenticated && (
+                        <p className="text-sm opacity-75 mt-2">
+                            ⚠️ Accessing via password authentication (IP not whitelisted)
+                        </p>
+                    )}
                 </header>
 
                 {/* Main Content */}

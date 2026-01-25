@@ -9,7 +9,14 @@ export default function IPChecker({ children }) {
     const pathname = usePathname();
 
     useEffect(() => {
-        // Check IP for all pages including admin
+        // Allow admin page to bypass IP check (it has its own password protection)
+        if (pathname?.startsWith('/admin')) {
+            setIsAllowed(true);
+            setLoading(false);
+            return;
+        }
+        
+        // Check IP for other pages
         checkIP();
     }, [pathname]);
 
