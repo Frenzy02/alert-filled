@@ -13,12 +13,23 @@ function getAllowedIPs() {
 }
 
 export function middleware(request) {
-  // Get client IP address
+  // Get client IP address (Vercel-compatible)
   const forwarded = request.headers.get('x-forwarded-for');
-  const ip = forwarded ? forwarded.split(',')[0].trim() : 
-             request.headers.get('x-real-ip') || 
-             request.ip || 
-             'unknown';
+  const vercelIP = request.headers.get('x-vercel-forwarded-for');
+  const realIP = request.headers.get('x-real-ip');
+  const cfConnectingIP = request.headers.get('cf-connecting-ip');
+  
+  let ip = vercelIP || 
+           cfConnectingIP ||
+           (forwarded ? forwarded.split(',')[0].trim() : null) ||
+           realIP || 
+           request.ip || 
+           'unknown';
+  
+  // Clean up the IP (remove port if present)
+  if (ip && ip !== 'unknown') {
+    ip = ip.split(':')[0].trim();
+  }
 
   // Allow access to admin page and API routes
   if (request.nextUrl.pathname.startsWith('/admin') || 

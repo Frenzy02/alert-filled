@@ -47,9 +47,14 @@ export default function AdminPage() {
             const response = await fetch('/api/check-ip');
             const data = await response.json();
             
+            // Log for debugging
+            console.log('IP Check Response:', data);
+            
             if (response.status === 403 || !data.allowed) {
                 setIpAllowed(false);
                 setIpCheckLoading(false);
+                // Show the detected IP in error message for debugging
+                setError(`Access Denied. Your detected IP: ${data.ip || 'unknown'}. Please add this IP to the allowed list.`);
             } else {
                 setIpAllowed(true);
                 setIpCheckLoading(false);
@@ -60,6 +65,7 @@ export default function AdminPage() {
             console.error('Error checking IP:', error);
             setIpAllowed(false);
             setIpCheckLoading(false);
+            setError('Error checking IP access: ' + error.message);
         }
     };
 

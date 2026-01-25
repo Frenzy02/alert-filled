@@ -3,10 +3,25 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, query } from 'firebase/firestore';
 
 function getClientIP(request) {
+  // Vercel uses specific headers for IP addresses
   const forwarded = request.headers.get('x-forwarded-for');
-  const ip = forwarded ? forwarded.split(',')[0].trim() : 
-             request.headers.get('x-real-ip') || 
-             'unknown';
+  const vercelIP = request.headers.get('x-vercel-forwarded-for');
+  const realIP = request.headers.get('x-real-ip');
+  const cfConnectingIP = request.headers.get('cf-connecting-ip'); // Cloudflare
+  
+  // Try different headers in order of priority
+  let ip = vercelIP || 
+           cfConnectingIP ||
+           (forwarded ? forwarded.split(',')[0].trim() : null) ||
+           realIP ||
+           request.ip ||
+           'unknown';
+  
+  // Clean up the IP (remove port if present)
+  if (ip && ip !== 'unknown') {
+    ip = ip.split(':')[0].trim();
+  }
+  
   return ip;
 }
 
