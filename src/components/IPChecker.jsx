@@ -102,34 +102,75 @@ export default function IPChecker({ children }) {
 
     if (!isAllowed) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-100">
-                <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
-                    <h1 className="text-3xl font-bold text-red-600 mb-4">Access Denied</h1>
-                    <p className="text-gray-700 mb-4">
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 via-red-100 to-orange-50 dark:from-gray-900 dark:via-red-900 dark:to-orange-900">
+                <div className="text-center bg-white dark:bg-gray-800 p-10 rounded-2xl shadow-2xl max-w-lg w-full mx-4 border-2 border-red-200 dark:border-red-800">
+                    {/* Icon */}
+                    <div className="mb-6 flex justify-center">
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-red-200 dark:bg-red-900 rounded-full blur-xl opacity-50 animate-pulse"></div>
+                            <div className="relative bg-red-100 dark:bg-red-800 p-6 rounded-full">
+                                <svg 
+                                    className="w-16 h-16 text-red-600 dark:text-red-400" 
+                                    fill="none" 
+                                    stroke="currentColor" 
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path 
+                                        strokeLinecap="round" 
+                                        strokeLinejoin="round" 
+                                        strokeWidth={2} 
+                                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" 
+                                    />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Title */}
+                    <h1 className="text-4xl font-bold text-red-600 dark:text-red-400 mb-3">
+                        Access Denied
+                    </h1>
+                    
+                    {/* Subtitle */}
+                    <p className="text-lg text-gray-700 dark:text-gray-300 mb-6">
                         Your IP address is not authorized to access this application.
                     </p>
-                    <div className="bg-gray-50 p-4 rounded-lg mb-4 text-left">
-                        <p className="text-sm font-semibold mb-2">Debug Info:</p>
-                        <p className="text-xs text-gray-600 font-mono break-all">
-                            Detected IP: {typeof window !== 'undefined' ? (localStorage.getItem('lastDetectedIP') || 'Check console') : 'Loading...'}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-2">
-                            Check browser console (F12) for more details
-                        </p>
+
+                    {/* Info Box */}
+                    <div className="bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/20 dark:to-orange-900/20 p-5 rounded-xl mb-6 border border-red-200 dark:border-red-800">
+                        <div className="flex items-start gap-3">
+                            <svg 
+                                className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                viewBox="0 0 24 24"
+                            >
+                                <path 
+                                    strokeLinecap="round" 
+                                    strokeLinejoin="round" 
+                                    strokeWidth={2} 
+                                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" 
+                                />
+                            </svg>
+                            <div className="text-left flex-1">
+                                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                                    Detected IP Address:
+                                </p>
+                                <p className="text-xs text-gray-600 dark:text-gray-400 font-mono break-all bg-white dark:bg-gray-900 p-2 rounded border border-red-200 dark:border-red-800">
+                                    {typeof window !== 'undefined' ? (localStorage.getItem('lastDetectedIP') || 'Unable to detect') : 'Loading...'}
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-gray-500 mt-3 italic">
+                                    Please contact the administrator to request access.
+                                </p>
+                            </div>
+                        </div>
                     </div>
-                    <div className="flex gap-2 justify-center">
-                        <a
-                            href="/my-ip"
-                            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all text-sm"
-                        >
-                            Check My IP
-                        </a>
-                        <a
-                            href="/admin"
-                            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all text-sm"
-                        >
-                            Admin Login
-                        </a>
+
+                    {/* Decorative Elements */}
+                    <div className="flex justify-center gap-2 mt-6">
+                        <div className="w-2 h-2 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+                        <div className="w-2 h-2 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                        <div className="w-2 h-2 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
                     </div>
                 </div>
             </div>
