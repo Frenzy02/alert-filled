@@ -45,15 +45,8 @@ function extractFields(data) {
         tenantName.toLowerCase().includes(tenant.toLowerCase())
     );
     
-    // Try to get timestamp from various fields
-    let timestamp = data.alert_time || data.timestamp || data.orig_timestamp;
-    if (!timestamp && data.timestamp_utc) {
-        timestamp = new Date(data.timestamp_utc).getTime();
-    }
-    if (!timestamp && data.orig_timestamp_utc) {
-        timestamp = new Date(data.orig_timestamp_utc).getTime();
-    }
-    
+    // Try to get timestamp - prioritize timestamp_utc
+    let timestamp = data.timestamp_utc || data.orig_timestamp_utc || data.alert_time || data.timestamp || data.orig_timestamp;
     const dateTime = formatDate(timestamp);
     
     // Get time occurred (UTC timestamp string) for allowed tenants
@@ -314,14 +307,8 @@ function formatWithSavedConfig(data, formatConfig, globalMappings = []) {
     const alertName = data.xdr_event?.display_name || data.event_name || 'Unknown Alert';
     const description = data.xdr_event?.description || '';
     
-    // Try to get timestamp
-    let timestamp = data.alert_time || data.timestamp || data.orig_timestamp;
-    if (!timestamp && data.timestamp_utc) {
-        timestamp = new Date(data.timestamp_utc).getTime();
-    }
-    if (!timestamp && data.orig_timestamp_utc) {
-        timestamp = new Date(data.orig_timestamp_utc).getTime();
-    }
+    // Try to get timestamp - prioritize timestamp_utc
+    let timestamp = data.timestamp_utc || data.orig_timestamp_utc || data.alert_time || data.timestamp || data.orig_timestamp;
     const dateTime = formatDate(timestamp);
     
     // Check if this is ESET format
