@@ -132,7 +132,7 @@ export default function AlertInvestigator({ isOpen, onClose, jsonData }) {
                                     }`}
                                 >
                                     {message.role === 'assistant' ? (
-                                        <div className="markdown-content text-sm sm:text-base leading-relaxed">
+                                        <div className="markdown-content text-sm leading-relaxed">
                                             <ReactMarkdown
                                                 components={{
                                                     table: ({ node, ...props }) => (
@@ -144,32 +144,32 @@ export default function AlertInvestigator({ isOpen, onClose, jsonData }) {
                                                         <thead className="bg-gray-100 dark:bg-gray-800" {...props} />
                                                     ),
                                                     th: ({ node, ...props }) => (
-                                                        <th className="border border-gray-300 dark:border-gray-600 px-3 py-2 text-left font-semibold text-sm" {...props} />
+                                                        <th className="border border-gray-300 dark:border-gray-600 px-3 py-2 text-left font-semibold text-xs" {...props} />
                                                     ),
                                                     td: ({ node, ...props }) => (
-                                                        <td className="border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm" {...props} />
+                                                        <td className="border border-gray-300 dark:border-gray-600 px-3 py-2 text-xs" {...props} />
                                                     ),
                                                     code: ({ node, inline, ...props }) => {
                                                         if (inline) {
                                                             return (
-                                                                <code className="bg-gray-200 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm font-mono" {...props} />
+                                                                <code className="bg-gray-200 dark:bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono" {...props} />
                                                             );
                                                         }
                                                         return (
-                                                            <code className="block bg-gray-100 dark:bg-gray-900 p-3 rounded-lg overflow-x-auto text-sm font-mono my-3" {...props} />
+                                                            <code className="block bg-gray-100 dark:bg-gray-900 p-3 rounded-lg overflow-x-auto text-xs font-mono my-3" {...props} />
                                                         );
                                                     },
                                                     pre: ({ node, ...props }) => (
-                                                        <pre className="bg-gray-100 dark:bg-gray-900 p-3 rounded-lg overflow-x-auto my-3 text-sm" {...props} />
+                                                        <pre className="bg-gray-100 dark:bg-gray-900 p-3 rounded-lg overflow-x-auto my-3 text-xs" {...props} />
                                                     ),
                                                     h1: ({ node, ...props }) => (
-                                                        <h1 className="text-2xl font-bold mt-6 mb-3 first:mt-0" {...props} />
+                                                        <h1 className="text-xl font-bold mt-6 mb-3 first:mt-0" {...props} />
                                                     ),
                                                     h2: ({ node, ...props }) => (
-                                                        <h2 className="text-xl font-bold mt-5 mb-2 first:mt-0" {...props} />
+                                                        <h2 className="text-lg font-bold mt-5 mb-2 first:mt-0" {...props} />
                                                     ),
                                                     h3: ({ node, ...props }) => (
-                                                        <h3 className="text-lg font-semibold mt-4 mb-2 first:mt-0" {...props} />
+                                                        <h3 className="text-base font-semibold mt-4 mb-2 first:mt-0" {...props} />
                                                     ),
                                                     ul: ({ node, ...props }) => (
                                                         <ul className="list-disc list-outside my-3 ml-6 space-y-1" {...props} />
@@ -178,10 +178,10 @@ export default function AlertInvestigator({ isOpen, onClose, jsonData }) {
                                                         <ol className="list-decimal list-outside my-3 ml-6 space-y-1" {...props} />
                                                     ),
                                                     li: ({ node, ...props }) => (
-                                                        <li className="pl-2" {...props} />
+                                                        <li className="pl-2 text-sm" {...props} />
                                                     ),
                                                     p: ({ node, ...props }) => (
-                                                        <p className="my-3 first:mt-0 last:mb-0" {...props} />
+                                                        <p className="my-2 first:mt-0 last:mb-0 text-sm leading-relaxed text-left" {...props} />
                                                     ),
                                                     strong: ({ node, ...props }) => (
                                                         <strong className="font-semibold" {...props} />
@@ -190,7 +190,7 @@ export default function AlertInvestigator({ isOpen, onClose, jsonData }) {
                                                         <em className="italic" {...props} />
                                                     ),
                                                     blockquote: ({ node, ...props }) => (
-                                                        <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 my-3 italic" {...props} />
+                                                        <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 my-3 italic text-sm" {...props} />
                                                     ),
                                                     hr: ({ node, ...props }) => (
                                                         <hr className="my-4 border-gray-300 dark:border-gray-600" {...props} />

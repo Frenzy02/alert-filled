@@ -642,17 +642,17 @@ export default function AdminPage() {
                                                     <td className="border border-gray-300 dark:border-gray-600 p-3">
                                                         {formatDate(format.createdAt)}
                                                     </td>
-                                                    <td className="border border-gray-300 dark:border-gray-600 p-3 text-center">
-                                                        <div className="flex gap-2 justify-center">
+                                                    <td className="border border-gray-300 dark:border-gray-600 p-3">
+                                                        <div className="flex gap-2 justify-center items-center">
                                                             <button
                                                                 onClick={() => handleEditFormat(format)}
-                                                                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-all text-sm"
+                                                                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-all text-sm font-medium whitespace-nowrap"
                                                             >
                                                                 Edit
                                                             </button>
                                                             <button
                                                                 onClick={() => handleDeleteFormat(format.id, format.alertName)}
-                                                                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-all text-sm"
+                                                                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-all text-sm font-medium whitespace-nowrap"
                                                             >
                                                                 Delete
                                                             </button>
@@ -669,7 +669,11 @@ export default function AdminPage() {
 
                     {/* Field Mappings Section */}
                     <div className="mb-8">
-                        <h2 className="text-2xl font-bold mb-4 text-gray-700 dark:text-gray-300">Field Mappings</h2>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+                                Field Mappings ({fieldMappings.length > 0 && fieldMappings[0].mappings ? fieldMappings[0].mappings.length : 0})
+                            </h2>
+                        </div>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                             Manage label to JSON path mappings used for formatting alerts
                         </p>
@@ -701,6 +705,10 @@ export default function AdminPage() {
 
                         {mappingsLoading ? (
                             <div className="text-center py-4 text-gray-500">Loading mappings...</div>
+                        ) : fieldMappings.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                No field mappings found. Click "Initialize Default Mappings" to add default mappings.
+                            </div>
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="w-full border-collapse border border-gray-300 dark:border-gray-600">
@@ -712,7 +720,7 @@ export default function AdminPage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {fieldMappings.length > 0 && fieldMappings[0].mappings ? (
+                                        {fieldMappings[0]?.mappings && fieldMappings[0].mappings.length > 0 ? (
                                             fieldMappings[0].mappings.map((mapping, index) => (
                                                 <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                                                     <td className="border border-gray-300 dark:border-gray-600 p-3">
@@ -721,20 +729,22 @@ export default function AdminPage() {
                                                     <td className="border border-gray-300 dark:border-gray-600 p-3 font-mono text-sm">
                                                         {mapping.path}
                                                     </td>
-                                                    <td className="border border-gray-300 dark:border-gray-600 p-3 text-center">
-                                                        <button
-                                                            onClick={() => handleDeleteMapping(fieldMappings[0].id, mapping.label)}
-                                                            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-all text-sm"
-                                                        >
-                                                            Remove
-                                                        </button>
+                                                    <td className="border border-gray-300 dark:border-gray-600 p-3">
+                                                        <div className="flex justify-center">
+                                                            <button
+                                                                onClick={() => handleDeleteMapping(fieldMappings[0].id, mapping.label)}
+                                                                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-all text-sm font-medium whitespace-nowrap"
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))
                                         ) : (
                                             <tr>
                                                 <td colSpan="3" className="border border-gray-300 dark:border-gray-600 p-3 text-center text-gray-500">
-                                                    No mappings found. Click "Initialize Mappings" to add default mappings.
+                                                    No mappings found. Click "Initialize Default Mappings" to add default mappings.
                                                 </td>
                                             </tr>
                                         )}
@@ -743,13 +753,15 @@ export default function AdminPage() {
                             </div>
                         )}
                         
-                        {fieldMappings.length === 0 && (
-                            <button
-                                onClick={initializeFieldMappings}
-                                className="mt-4 px-6 py-2 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 transition-all"
-                            >
-                                Initialize Default Mappings
-                            </button>
+                        {fieldMappings.length === 0 && !mappingsLoading && (
+                            <div className="mt-4 text-center">
+                                <button
+                                    onClick={initializeFieldMappings}
+                                    className="px-6 py-2 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 transition-all"
+                                >
+                                    Initialize Default Mappings
+                                </button>
+                            </div>
                         )}
                     </div>
 

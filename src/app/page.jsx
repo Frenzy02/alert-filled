@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, where, updateDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import AddFormatModal from '@/components/AddFormatModal';
 import AlertInvestigator from '@/components/AlertInvestigator';
 
@@ -833,10 +833,14 @@ export default function Home() {
     const [showAddFormatModal, setShowAddFormatModal] = useState(false);
     const [showSavedFormatsModal, setShowSavedFormatsModal] = useState(false);
     const [showFieldMappingModal, setShowFieldMappingModal] = useState(false);
+    const [showSavedMappingsModal, setShowSavedMappingsModal] = useState(false);
     const [showInvestigator, setShowInvestigator] = useState(false);
     const [savedAlertFormats, setSavedAlertFormats] = useState([]);
+    const [savedFieldMappings, setSavedFieldMappings] = useState([]);
     const [loadingFormats, setLoadingFormats] = useState(true);
+    const [loadingMappings, setLoadingMappings] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [mappingSearchQuery, setMappingSearchQuery] = useState('');
     const [formatToEdit, setFormatToEdit] = useState(null);
     const [currentJsonData, setCurrentJsonData] = useState(null);
     const pasteTimeoutRef = useRef(null);
@@ -874,6 +878,112 @@ export default function Home() {
 
         fetchSavedFormats();
     }, [showAddFormatModal, showSavedFormatsModal]); // Refresh when modal opens/closes
+
+    // Fetch saved field mappings from Firebase
+    useEffect(() => {
+        const fetchSavedMappings = async () => {
+            try {
+                setLoadingMappings(true);
+                const mappingsQuery = query(collection(db, 'fieldMappings'));
+                const mappingsSnapshot = await getDocs(mappingsQuery);
+                
+                if (!mappingsSnapshot.empty) {
+                    const doc = mappingsSnapshot.docs[0];
+                    const data = doc.data();
+                    const mappings = (data.mappings || []).map((m, index) => ({
+                        id: doc.id,
+                        index,
+                        label: m.label || '',
+                        path: m.path || ''
+                    }));
+                    setSavedFieldMappings(mappings);
+                } else {
+                    setSavedFieldMappings([]);
+                }
+            } catch (err) {
+                console.error('Error fetching saved mappings:', err);
+            } finally {
+                setLoadingMappings(false);
+            }
+        };
+
+        if (showSavedMappingsModal || showFieldMappingModal) {
+            fetchSavedMappings();
+        }
+    }, [showSavedMappingsModal, showFieldMappingModal]);
+
+    const handleDeleteFormat = async (formatId, alertName) => {
+        if (!confirm(`Are you sure you want to delete the format for "${alertName}"?`)) {
+            return;
+        }
+
+        try {
+            await deleteDoc(doc(db, 'alertFormats', formatId));
+            // Refresh the formats list
+            const formatsQuery = query(collection(db, 'alertFormats'));
+            const formatsSnapshot = await getDocs(formatsQuery);
+            
+            const formats = [];
+            formatsSnapshot.forEach((doc) => {
+                const data = doc.data();
+                formats.push({
+                    id: doc.id,
+                    alertName: data.alertName || 'Unknown Alert',
+                    eventName: data.eventName || '',
+                    expectedFormat: data.expectedFormat || '',
+                    alertIdentifier: data.alertIdentifier || '',
+                    createdAt: data.createdAt || ''
+                });
+            });
+            
+            formats.sort((a, b) => a.alertName.localeCompare(b.alertName));
+            setSavedAlertFormats(formats);
+            setSuccess(`Format "${alertName}" deleted successfully!`);
+            setTimeout(() => setSuccess(''), 3000);
+        } catch (err) {
+            console.error('Error deleting format:', err);
+            setError('Failed to delete format: ' + err.message);
+            setTimeout(() => setError(''), 3000);
+        }
+    };
+
+    const handleDeleteMapping = async (docId, label) => {
+        if (!confirm(`Are you sure you want to delete the mapping for "${label}"?`)) {
+            return;
+        }
+
+        try {
+            const mappingsQuery = query(collection(db, 'fieldMappings'));
+            const mappingsSnapshot = await getDocs(mappingsQuery);
+            
+            if (!mappingsSnapshot.empty) {
+                const docRef = mappingsSnapshot.docs[0];
+                const currentData = docRef.data();
+                const currentMappings = currentData.mappings || [];
+                const updatedMappings = currentMappings.filter(m => m.label !== label);
+                
+                await updateDoc(doc(db, 'fieldMappings', docRef.id), {
+                    mappings: updatedMappings,
+                    updatedAt: new Date().toISOString()
+                });
+                
+                // Refresh the mappings list
+                const updatedMappingsList = updatedMappings.map((m, index) => ({
+                    id: docRef.id,
+                    index,
+                    label: m.label || '',
+                    path: m.path || ''
+                }));
+                setSavedFieldMappings(updatedMappingsList);
+                setSuccess(`Mapping "${label}" deleted successfully!`);
+                setTimeout(() => setSuccess(''), 3000);
+            }
+        } catch (err) {
+            console.error('Error deleting mapping:', err);
+            setError('Failed to delete mapping: ' + err.message);
+            setTimeout(() => setError(''), 3000);
+        }
+    };
 
     const handleConvert = async () => {
         const input = jsonInput.trim();
@@ -1049,6 +1159,15 @@ export default function Home() {
                                 Add Field Mapping
                             </button>
                             <button
+                                onClick={() => setShowSavedMappingsModal(true)}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-all flex items-center gap-2 text-sm border border-emerald-600"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                </svg>
+                                Mappings ({savedFieldMappings.length})
+                            </button>
+                            <button
                                 onClick={() => setShowSavedFormatsModal(true)}
                                 className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-all flex items-center gap-2 text-sm border border-slate-600"
                             >
@@ -1135,10 +1254,10 @@ export default function Home() {
                         <textarea
                             id="textOutput"
                             value={textOutput}
-                            readOnly
+                            onChange={(e) => setTextOutput(e.target.value)}
                             placeholder="Formatted text will appear here..."
                             rows={18}
-                            className="w-full p-4 bg-slate-900/50 border border-slate-600 rounded-lg font-mono text-xs text-slate-200 resize-y placeholder:text-slate-500"
+                            className="w-full p-4 bg-slate-900/50 border border-slate-600 rounded-lg font-mono text-xs text-slate-200 resize-y placeholder:text-slate-500 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500"
                         />
                         <div className="flex gap-2 mt-3">
                             <button
@@ -1331,17 +1450,26 @@ export default function Home() {
                                                     <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
                                                     <span className="truncate">{format.alertName}</span>
                                                 </div>
-                                                <button
-                                                    onClick={() => {
-                                                        setFormatToEdit(format);
-                                                        setShowSavedFormatsModal(false);
-                                                        setShowAddFormatModal(true);
-                                                    }}
-                                                    className="opacity-0 group-hover:opacity-100 transition-opacity bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs flex-shrink-0"
-                                                    title="Edit format"
-                                                >
-                                                    Edit
-                                                </button>
+                                                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={() => {
+                                                            setFormatToEdit(format);
+                                                            setShowSavedFormatsModal(false);
+                                                            setShowAddFormatModal(true);
+                                                        }}
+                                                        className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs flex-shrink-0"
+                                                        title="Edit format"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteFormat(format.id, format.alertName)}
+                                                        className="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex-shrink-0"
+                                                        title="Delete format"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -1350,6 +1478,127 @@ export default function Home() {
                         </div>
                     </div>
         </div>
+            )}
+
+            {/* Saved Field Mappings Modal */}
+            {showSavedMappingsModal && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+                        {/* Header */}
+                        <div className="bg-slate-900/50 border-b border-slate-700 p-5 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-white">Saved Field Mappings</h2>
+                                    <p className="text-xs text-slate-400 mt-0.5">
+                                        {savedFieldMappings.length} mapping{savedFieldMappings.length !== 1 ? 's' : ''} configured
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setShowSavedMappingsModal(false);
+                                    setMappingSearchQuery('');
+                                }}
+                                className="text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg p-2 transition-all"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-5 overflow-y-auto flex-1 bg-slate-900/30">
+                            {/* Search Input */}
+                            <div className="mb-4">
+                                <div className="relative">
+                                    <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                    <input
+                                        type="text"
+                                        value={mappingSearchQuery}
+                                        onChange={(e) => setMappingSearchQuery(e.target.value)}
+                                        placeholder="Search field mappings..."
+                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-slate-200 placeholder:text-slate-500 text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            {loadingMappings ? (
+                                <div className="text-center py-12">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-600 border-t-emerald-500 mx-auto"></div>
+                                    <p className="text-slate-400 mt-3 text-sm">Loading mappings...</p>
+                                </div>
+                            ) : savedFieldMappings.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <svg className="w-12 h-12 text-slate-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                    </svg>
+                                    <p className="text-slate-400 text-sm">
+                                        No field mappings configured yet
+                                    </p>
+                                    <p className="text-slate-500 text-xs mt-1">
+                                        Click "Add Field Mapping" to create one
+                                    </p>
+                                </div>
+                            ) : (() => {
+                                // Filter mappings based on search query
+                                const filteredMappings = savedFieldMappings.filter((mapping) => {
+                                    const query = mappingSearchQuery.toLowerCase();
+                                    return (
+                                        mapping.label.toLowerCase().includes(query) ||
+                                        mapping.path.toLowerCase().includes(query)
+                                    );
+                                });
+
+                                if (filteredMappings.length === 0) {
+                                    return (
+                                        <div className="text-center py-12">
+                                            <svg className="w-12 h-12 text-slate-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                            </svg>
+                                            <p className="text-slate-400 text-sm">
+                                                No mappings found matching "{mappingSearchQuery}"
+                                            </p>
+                                        </div>
+                                    );
+                                }
+
+                                return (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        {filteredMappings.map((mapping) => (
+                                            <div
+                                                key={`${mapping.id}-${mapping.index}`}
+                                                className="px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-sm font-medium text-slate-200 hover:border-emerald-500 hover:bg-slate-800/80 transition-all flex items-center justify-between gap-2 group"
+                                            >
+                                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                    <div className="w-2 h-2 bg-emerald-500 rounded-full flex-shrink-0"></div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="truncate font-semibold">{mapping.label}</div>
+                                                        <div className="truncate text-xs text-slate-400 font-mono">{mapping.path}</div>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleDeleteMapping(mapping.id, mapping.label)}
+                                                    className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex-shrink-0"
+                                                    title="Delete mapping"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
+                </div>
             )}
     </div>
   );

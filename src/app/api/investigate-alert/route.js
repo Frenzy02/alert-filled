@@ -105,11 +105,10 @@ For the client-ready message, you MUST:
 - Focus on verification rather than assuming malicious intent
 - ALWAYS end with: "Kindly confirm if this activity is authorized or related to your operations."
 
-Format your client-ready message as:
+Format your client-ready message as a plain paragraph (NO heading, NO markdown formatting). Start directly with "We detected" and write the message as a single, well-formatted paragraph. Do NOT use headings like "## Client-Ready Message" or "### Client-Ready Message". Just write the message starting with "We detected" and continue naturally.
 
-## Client-Ready Message
-
-[Explain how the alert was detected, specifying which system or sensor triggered it and the activity or process that caused it. Clearly describe what happened and why it could pose a risk, using language that is understandable to the client while avoiding unnecessary technical jargon. Advise the client on next steps, such as confirming whether the activity is authorized or taking action if it is unauthorized. Keep the message concise, respectful, and neutral, focusing on verification rather than assuming malicious intent. ALWAYS end with: "Kindly confirm if this activity is authorized or related to your operations."]
+Example format:
+We detected [explanation of how the alert was detected, specifying which system or sensor triggered it and the activity or process that caused it]. [Clearly describe what happened and why it could pose a risk, using language that is understandable to the client while avoiding unnecessary technical jargon]. [Advise the client on next steps, such as confirming whether the activity is authorized or taking action if it is unauthorized]. Keep the message concise, respectful, and neutral, focusing on verification rather than assuming malicious intent. ALWAYS end with: "Kindly confirm if this activity is authorized or related to your operations."
 
 ---
 
