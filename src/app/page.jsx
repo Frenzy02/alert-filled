@@ -220,19 +220,54 @@ function formatOutput(fields) {
 
 // Get value from nested object using path string
 function getNestedValue(obj, path) {
-    if (!path) return null;
+    if (!path || !obj) return null;
+    
+    // Handle direct property access (no dots)
+    if (!path.includes('.')) {
+        // Try exact match first
+        if (obj[path] !== undefined) {
+            return obj[path];
+        }
+        // Try case-insensitive match
+        const pathLower = path.toLowerCase();
+        for (const key in obj) {
+            if (key.toLowerCase() === pathLower) {
+                return obj[key];
+            }
+        }
+        return null;
+    }
+    
     // Handle array indices like "field[0]"
     const parts = path.split('.');
     let current = obj;
     for (const part of parts) {
+        if (current === null || current === undefined) break;
+        
         if (part.includes('[')) {
             const [key, index] = part.split('[');
             const idx = parseInt(index.replace(']', ''));
             current = current?.[key]?.[idx];
         } else {
-            current = current?.[part];
+            // Try exact match first
+            if (current[part] !== undefined) {
+                current = current[part];
+            } else {
+                // Try case-insensitive match
+                const partLower = part.toLowerCase();
+                let found = false;
+                for (const key in current) {
+                    if (key.toLowerCase() === partLower) {
+                        current = current[key];
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    return null;
+                }
+            }
         }
-        if (current === null || current === undefined) break;
     }
     return current;
 }
@@ -449,33 +484,69 @@ function formatWithSavedConfig(data, formatConfig, globalMappings = []) {
                 continue;
             }
             
-            // Check if we have a mapping for this label
-            const jsonPath = labelToPathMap[line];
+            // Try to find mapping - first exact match, then case-insensitive match
+            let jsonPath = labelToPathMap[line];
+            if (!jsonPath) {
+                // Try case-insensitive match
+                for (const [label, path] of Object.entries(labelToPathMap)) {
+                    if (label.toLowerCase() === lineLower) {
+                        jsonPath = path;
+                        break;
+                    }
+                }
+            }
+            
+            // If still no mapping, try fuzzy match on labels
+            if (!jsonPath) {
+                const normalizedLine = lineLower.replace(/\s+/g, ' ').trim();
+                for (const [label, path] of Object.entries(labelToPathMap)) {
+                    const normalizedLabel = label.toLowerCase().replace(/\s+/g, ' ').trim();
+                    if (normalizedLabel === normalizedLine || 
+                        normalizedLabel.includes(normalizedLine) || 
+                        normalizedLine.includes(normalizedLabel)) {
+                        jsonPath = path;
+                        break;
+                    }
+                }
+            }
+            
+            let value = null;
             
             if (jsonPath) {
                 // Use the specific JSON path to get the value
-                const value = getNestedValue(data, jsonPath);
+                value = getNestedValue(data, jsonPath);
                 
-                // Always show the field if it's in the template, even if value is empty
-                output += line + '\n';
-                if (value !== null && value !== undefined && value !== '') {
-                    output += String(value) + '\n\n';
-                } else {
-                    // Show empty line if value doesn't exist
-                    output += '\n\n';
+                // If value not found with the path, try alternative approaches
+                if ((value === null || value === undefined || value === '') && jsonPath.includes('.')) {
+                    // Try without the nested path (just the last part)
+                    const lastPart = jsonPath.split('.').pop();
+                    value = getNestedValue(data, lastPart);
                 }
+                
+                // If still no value, try alternative path variations
+                if ((value === null || value === undefined || value === '') && jsonPath.includes('.')) {
+                    // Try each part of the path separately
+                    const pathParts = jsonPath.split('.');
+                    for (let j = pathParts.length - 1; j >= 0; j--) {
+                        const partialPath = pathParts.slice(j).join('.');
+                        value = getNestedValue(data, partialPath);
+                        if (value !== null && value !== undefined && value !== '') break;
+                    }
+                }
+            }
+            
+            // If still no value, try fuzzy matching as fallback (even if we had a path)
+            if (value === null || value === undefined || value === '') {
+                value = findValueByLabel(data, line);
+            }
+            
+            // Always show the field if it's in the template, even if value is empty
+            output += line + '\n';
+            if (value !== null && value !== undefined && value !== '') {
+                output += String(value) + '\n\n';
             } else {
-                // If no mapping found, try fuzzy matching as fallback
-                const value = findValueByLabel(data, line);
-                
-                // Always show the field if it's in the template
-                output += line + '\n';
-                if (value !== null && value !== undefined && value !== '') {
-                    output += String(value) + '\n\n';
-                } else {
-                    // Show empty line if value doesn't exist
-                    output += '\n\n';
-                }
+                // Show empty line if value doesn't exist
+                output += '\n\n';
             }
         }
         
@@ -1435,7 +1506,7 @@ export default function Home() {
                                             >
                                                 <div className="flex items-center gap-2 flex-1 min-w-0">
                                                     <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
-                                                    <span className="truncate">{format.alertName}</span>
+                                                <span className="truncate">{format.alertName}</span>
                                                 </div>
                                                 <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button
