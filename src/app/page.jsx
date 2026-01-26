@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, query, where, updateDoc, doc } from 'firebase/firestore';
 import AddFormatModal from '@/components/AddFormatModal';
+import AlertInvestigator from '@/components/AlertInvestigator';
 
 // Format timestamp to readable date
 function formatDate(timestamp) {
@@ -832,10 +833,12 @@ export default function Home() {
     const [showAddFormatModal, setShowAddFormatModal] = useState(false);
     const [showSavedFormatsModal, setShowSavedFormatsModal] = useState(false);
     const [showFieldMappingModal, setShowFieldMappingModal] = useState(false);
+    const [showInvestigator, setShowInvestigator] = useState(false);
     const [savedAlertFormats, setSavedAlertFormats] = useState([]);
     const [loadingFormats, setLoadingFormats] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [formatToEdit, setFormatToEdit] = useState(null);
+    const [currentJsonData, setCurrentJsonData] = useState(null);
     const pasteTimeoutRef = useRef(null);
 
     // Fetch saved alert formats from Firebase
@@ -882,6 +885,10 @@ export default function Home() {
         }
         
         try {
+            // Parse and store JSON data for investigator
+            const parsedData = JSON.parse(input);
+            setCurrentJsonData(parsedData);
+            
             const output = await convertJsonToText(input);
             setTextOutput(output);
             setError('');
@@ -891,6 +898,7 @@ export default function Home() {
             setError(err.message);
             setTextOutput('');
             setSuccess('');
+            setCurrentJsonData(null);
         }
     };
 
@@ -974,11 +982,20 @@ export default function Home() {
         if (jsonInput.trim().length > 50) { // Only auto-convert if there's substantial content
             pasteTimeoutRef.current = setTimeout(async () => {
                 try {
+                    // Parse and store JSON data for investigator
+                    try {
+                        const parsedData = JSON.parse(jsonInput.trim());
+                        setCurrentJsonData(parsedData);
+                    } catch (parseErr) {
+                        setCurrentJsonData(null);
+                    }
+                    
                     const output = await convertJsonToText(jsonInput.trim());
                     setTextOutput(output);
                     setError('');
                 } catch (err) {
                     // Silently fail on auto-convert, only show error on manual convert
+                    setCurrentJsonData(null);
                 }
             }, 800);
         }
@@ -1079,6 +1096,18 @@ export default function Home() {
                                 </svg>
                                 Convert
                             </button>
+                            {currentJsonData && (
+                                <button
+                                    onClick={() => setShowInvestigator(true)}
+                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl"
+                                    title="Investigate this alert with AI"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                    </svg>
+                                    Investigate
+                                </button>
+                            )}
                             <button
                                 onClick={handleClear}
                                 className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-all text-sm border border-slate-600"
@@ -1192,6 +1221,13 @@ export default function Home() {
             <FieldMappingModal
                 isOpen={showFieldMappingModal}
                 onClose={() => setShowFieldMappingModal(false)}
+            />
+
+            {/* Alert Investigator */}
+            <AlertInvestigator
+                isOpen={showInvestigator}
+                onClose={() => setShowInvestigator(false)}
+                jsonData={currentJsonData}
             />
 
             {/* Saved Formats Modal */}
