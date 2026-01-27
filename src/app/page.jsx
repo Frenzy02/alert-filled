@@ -1193,22 +1193,42 @@ export default function Home() {
         if (jsonInput.trim().length > 50) { // Only auto-convert if there's substantial content
             pasteTimeoutRef.current = setTimeout(async () => {
                 try {
+                    const input = jsonInput.trim();
+                    
                     // Parse and store JSON data for investigator
-                    try {
-                        const parsedData = JSON.parse(jsonInput.trim());
-                        setCurrentJsonData(parsedData);
-                    } catch (parseErr) {
+                    const parsedData = JSON.parse(input);
+                    setCurrentJsonData(parsedData);
+                    
+                    // Convert JSON to formatted text
+                    const output = await convertJsonToText(input);
+                    const outputWithHeader = `Here are the other details for this alert po\n\n${output || ''}`;
+                    setTextOutput(outputWithHeader);
+                    
+                    // Generate report format
+                    const report = generateReportFormat(parsedData);
+                    setReportFormat(report);
+                    
+                    setError('');
+                    setSuccess('Conversion successful!');
+                    setTimeout(() => setSuccess(''), 3000);
+                } catch (err) {
+                    // Only show error if it's a JSON parse error
+                    if (err.message.includes('JSON') || err.message.includes('parse')) {
+                        setError('');
+                        setTextOutput('');
+                        setReportFormat('');
+                        setCurrentJsonData(null);
+                    } else {
+                        // For other errors, silently fail
                         setCurrentJsonData(null);
                     }
-                    
-                    const output = await convertJsonToText(jsonInput.trim());
-                    setTextOutput(output);
-                    setError('');
-                } catch (err) {
-                    // Silently fail on auto-convert, only show error on manual convert
-                    setCurrentJsonData(null);
                 }
             }, 800);
+        } else {
+            // Clear outputs if input is too short
+            setTextOutput('');
+            setReportFormat('');
+            setCurrentJsonData(null);
         }
         
         return () => {
@@ -1404,15 +1424,6 @@ export default function Home() {
                             className="w-full p-4 bg-slate-900/50 border border-slate-600 rounded-lg font-mono text-xs text-slate-200 resize-y focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder:text-slate-500"
                         />
                         <div className="flex gap-2 mt-3">
-                            <button
-                                onClick={handleConvert}
-                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                Convert
-                            </button>
                             {currentJsonData && (
                                 <button
                                     onClick={() => setShowInvestigator(true)}
