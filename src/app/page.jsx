@@ -886,6 +886,7 @@ async function convertJsonToText(jsonString) {
 export default function Home() {
     const [jsonInput, setJsonInput] = useState('');
     const [textOutput, setTextOutput] = useState('');
+    const [reportFormat, setReportFormat] = useState('');
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [showAddFormatModal, setShowAddFormatModal] = useState(false);
@@ -1043,6 +1044,26 @@ export default function Home() {
         }
     };
 
+    // Generate report format output
+    const generateReportFormat = (data) => {
+        // Extract alert name
+        const alertName = data.xdr_event?.display_name || data.event_name || 'Unknown Alert';
+        
+        // Extract timestamp
+        let timestamp = data.timestamp_utc || data.orig_timestamp_utc || data.alert_time || data.timestamp || data.orig_timestamp;
+        const dateTime = formatDate(timestamp);
+        
+        // Extract description
+        const description = data.xdr_event?.description || data.description || '';
+        
+        // Build the report format - simple format for all alerts
+        let report = `Hello sirs we receive an alert about ${alertName}\n\n`;
+        report += `${dateTime}\n\n`;
+        report += `${description}`;
+        
+        return report;
+    };
+
     const handleConvert = async () => {
         const input = jsonInput.trim();
         
@@ -1059,12 +1080,18 @@ export default function Home() {
             
             const output = await convertJsonToText(input);
             setTextOutput(output);
+            
+            // Generate report format
+            const report = generateReportFormat(parsedData);
+            setReportFormat(report);
+            
             setError('');
             setSuccess('Conversion successful!');
             setTimeout(() => setSuccess(''), 3000);
         } catch (err) {
             setError(err.message);
             setTextOutput('');
+            setReportFormat('');
             setSuccess('');
             setCurrentJsonData(null);
         }
@@ -1073,6 +1100,8 @@ export default function Home() {
     const handleClear = () => {
         setJsonInput('');
         setTextOutput('');
+        setReportFormat('');
+        setCurrentJsonData(null);
         setError('');
         setSuccess('');
     };
@@ -1086,6 +1115,19 @@ export default function Home() {
         
         navigator.clipboard.writeText(textOutput);
         setSuccess('Copied to clipboard!');
+        setError('');
+        setTimeout(() => setSuccess(''), 3000);
+    };
+
+    const handleCopyReportFormat = () => {
+        if (!reportFormat) {
+            setError('No report format to copy');
+            setSuccess('');
+            return;
+        }
+        
+        navigator.clipboard.writeText(reportFormat);
+        setSuccess('Report format copied to clipboard!');
         setError('');
         setTimeout(() => setSuccess(''), 3000);
     };
@@ -1239,7 +1281,7 @@ export default function Home() {
                 </header>
 
                 {/* Main Content */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {/* Input Section */}
                     <div className="bg-slate-800/90 backdrop-blur-sm border border-slate-700 rounded-lg shadow-xl p-5">
                         <div className="flex items-center justify-between mb-3">
@@ -1322,6 +1364,43 @@ export default function Home() {
                                 onClick={handleCopy}
                                 disabled={!textOutput}
                                 className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                Copy
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Report Format Section */}
+                    <div className="bg-slate-800/90 backdrop-blur-sm border border-slate-700 rounded-lg shadow-xl p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <label htmlFor="reportFormat" className="flex items-center gap-2 text-sm font-semibold text-slate-300">
+                                <svg className="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                First Report format Output
+                            </label>
+                            {reportFormat && (
+                                <span className="text-xs text-slate-400 font-mono">
+                                    {reportFormat.length} chars
+                                </span>
+                            )}
+                        </div>
+                        <textarea
+                            id="reportFormat"
+                            value={reportFormat}
+                            onChange={(e) => setReportFormat(e.target.value)}
+                            placeholder="First report format will appear here..."
+                            rows={18}
+                            className="w-full p-4 bg-slate-900/50 border border-slate-600 rounded-lg font-mono text-xs text-slate-200 resize-y placeholder:text-slate-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                        />
+                        <div className="flex gap-2 mt-3">
+                            <button
+                                onClick={handleCopyReportFormat}
+                                disabled={!reportFormat}
+                                className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
