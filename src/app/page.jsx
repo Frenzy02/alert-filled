@@ -1079,7 +1079,7 @@ export default function Home() {
             setCurrentJsonData(parsedData);
             
             const output = await convertJsonToText(input);
-            const outputWithHeader = `Here is the other details for this alert\n\n${output || ''}`;
+            const outputWithHeader = `Here is the other details for this alert po\n\n${output || ''}`;
             setTextOutput(outputWithHeader);
             
             // Generate report format
