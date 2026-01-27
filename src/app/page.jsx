@@ -1172,18 +1172,6 @@ export default function Home() {
         }
     };
 
-    const handlePaste = () => {
-        // Auto-convert after paste with slight delay
-        if (pasteTimeoutRef.current) {
-            clearTimeout(pasteTimeoutRef.current);
-        }
-        pasteTimeoutRef.current = setTimeout(() => {
-            if (jsonInput.trim()) {
-                handleConvert();
-            }
-        }, 500);
-    };
-
     // Auto-convert when input changes (debounced)
     useEffect(() => {
         if (pasteTimeoutRef.current) {
