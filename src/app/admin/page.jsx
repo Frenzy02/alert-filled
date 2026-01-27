@@ -9,6 +9,10 @@ import AddFormatModal from '@/components/AddFormatModal';
 export default function AdminPage() {
     const [allowedIPs, setAllowedIPs] = useState([]);
     const [newIP, setNewIP] = useState('');
+    const [userName, setUserName] = useState('');
+    const [editingIP, setEditingIP] = useState(null);
+    const [editIP, setEditIP] = useState('');
+    const [editUserName, setEditUserName] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -25,6 +29,10 @@ export default function AdminPage() {
     const [formatsLoading, setFormatsLoading] = useState(false);
     const [showFormatModal, setShowFormatModal] = useState(false);
     const [formatToEdit, setFormatToEdit] = useState(null);
+    const [activeTab, setActiveTab] = useState('formats'); // 'formats' or 'mappings'
+    const [searchFormats, setSearchFormats] = useState('');
+    const [searchMappings, setSearchMappings] = useState('');
+    const [searchIPs, setSearchIPs] = useState('');
     const router = useRouter();
 
     // Check if already authenticated
@@ -201,6 +209,11 @@ export default function AdminPage() {
             return;
         }
 
+        if (!userName.trim()) {
+            setError('Please enter a user name');
+            return;
+        }
+
         let trimmedIP = newIP.trim();
         
         // Auto-convert to /24 CIDR if it's a regular IP (not already CIDR)
@@ -229,12 +242,14 @@ export default function AdminPage() {
         try {
             await addDoc(collection(db, 'allowedIPs'), {
                 ip: trimmedIP,
+                userName: userName.trim(),
                 createdAt: new Date().toISOString(),
                 createdBy: 'admin',
                 isPrivate: isPrivateIP(trimmedIP) // Mark if it's a private/local IP
             });
             
             setNewIP('');
+            setUserName('');
             setSuccess(`IP address added successfully! (Saved as: ${trimmedIP})`);
             setError('');
             setTimeout(() => setSuccess(''), 5000);
@@ -257,6 +272,70 @@ export default function AdminPage() {
             fetchAllowedIPs();
         } catch (err) {
             setError('Failed to remove IP address: ' + err.message);
+        }
+    };
+
+    const handleStartEdit = (item) => {
+        setEditingIP(item.id);
+        setEditIP(item.ip);
+        setEditUserName(item.userName || '');
+    };
+
+    const handleCancelEdit = () => {
+        setEditingIP(null);
+        setEditIP('');
+        setEditUserName('');
+    };
+
+    const handleSaveEdit = async (id) => {
+        if (!editIP.trim()) {
+            setError('Please enter an IP address');
+            return;
+        }
+
+        if (!editUserName.trim()) {
+            setError('Please enter a user name');
+            return;
+        }
+
+        let trimmedIP = editIP.trim();
+        
+        // Auto-convert to /24 CIDR if it's a regular IP (not already CIDR)
+        if (!trimmedIP.includes('/')) {
+            const parts = trimmedIP.split('.');
+            if (parts.length === 4) {
+                // Convert to /24 CIDR automatically
+                trimmedIP = convertToCIDR24(trimmedIP);
+            }
+        }
+
+        // Validate IP format
+        if (!isValidIP(trimmedIP)) {
+            setError('Invalid IP address format. Use IPv4 (e.g., 192.168.1.1) or CIDR (e.g., 192.168.1.0/24)');
+            return;
+        }
+
+        // Check for duplicates (excluding current item)
+        const isDuplicate = allowedIPs.some(item => item.ip === trimmedIP && item.id !== id);
+        if (isDuplicate) {
+            setError('This IP address is already in the whitelist');
+            return;
+        }
+
+        try {
+            await updateDoc(doc(db, 'allowedIPs', id), {
+                ip: trimmedIP,
+                userName: editUserName.trim(),
+                updatedAt: new Date().toISOString()
+            });
+            
+            setSuccess('IP address updated successfully!');
+            setError('');
+            setTimeout(() => setSuccess(''), 3000);
+            handleCancelEdit();
+            fetchAllowedIPs();
+        } catch (err) {
+            setError('Failed to update IP address: ' + err.message);
         }
     };
 
@@ -541,21 +620,21 @@ export default function AdminPage() {
         <div className="min-h-screen bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 p-4 md:p-8">
             <div className="max-w-4xl mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
                 {/* Header */}
-                <header className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-8 text-center">
+                <header className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-4 text-center">
                     <div className="flex justify-between items-center mb-2">
-                        <h1 className="text-4xl md:text-5xl font-bold">🔐 IP Access Control</h1>
+                        <h1 className="text-xl md:text-2xl font-bold">🔐 Admin Panel</h1>
                         <button
                             onClick={() => {
                                 localStorage.removeItem('admin_authenticated');
                                 setIsAuthenticated(false);
                                 setShowPasswordForm(true);
                             }}
-                            className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm transition-all"
+                            className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs transition-all"
                         >
                             Logout
                         </button>
                     </div>
-                    <p className="text-lg opacity-90">Manage allowed IP addresses for the application</p>
+                    <p className="text-sm opacity-90">Manage allowed IP addresses for the application</p>
                     {!ipAllowed && isAuthenticated && (
                         <p className="text-sm opacity-75 mt-2">
                             ⚠️ Accessing via password authentication (IP not whitelisted)
@@ -565,249 +644,390 @@ export default function AdminPage() {
 
                 {/* Main Content */}
                 <div className="p-6 md:p-8">
-                    {/* Add IP Section */}
+                    {/* Tabs for Alert Formats, Field Mappings, and IP Whitelist */}
                     <div className="mb-8">
-                        <h2 className="text-2xl font-bold mb-4 text-gray-700 dark:text-gray-300">Add New IP Address</h2>
-                        <div className="flex gap-3">
+                        {/* Tab Navigation */}
+                        <div className="flex border-b border-gray-300 dark:border-gray-600 mb-4">
+                            <button
+                                onClick={() => setActiveTab('formats')}
+                                className={`px-4 py-2 text-sm font-medium transition-all ${
+                                    activeTab === 'formats'
+                                        ? 'border-b-2 border-purple-600 text-purple-600 dark:text-purple-400'
+                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                }`}
+                            >
+                                Alert Formats ({alertFormats.length})
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('mappings')}
+                                className={`px-4 py-2 text-sm font-medium transition-all ${
+                                    activeTab === 'mappings'
+                                        ? 'border-b-2 border-purple-600 text-purple-600 dark:text-purple-400'
+                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                }`}
+                            >
+                                Field Mappings ({fieldMappings.length > 0 && fieldMappings[0].mappings ? fieldMappings[0].mappings.length : 0})
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('ips')}
+                                className={`px-4 py-2 text-sm font-medium transition-all ${
+                                    activeTab === 'ips'
+                                        ? 'border-b-2 border-purple-600 text-purple-600 dark:text-purple-400'
+                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                }`}
+                            >
+                                IP Address Whitelist ({allowedIPs.length})
+                            </button>
+                        </div>
+
+                        {/* Tab Content - Alert Formats */}
+                        {activeTab === 'formats' && (
+                            <div>
+                                <div className="flex justify-between items-center mb-3 gap-2">
+                                    <input
+                                        type="text"
+                                        value={searchFormats}
+                                        onChange={(e) => setSearchFormats(e.target.value)}
+                                        placeholder="Search formats..."
+                                        className="flex-1 p-2 text-xs border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            setFormatToEdit(null);
+                                            setShowFormatModal(true);
+                                        }}
+                                        className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-4 py-1.5 rounded-lg text-xs font-medium hover:from-purple-700 hover:to-indigo-800 transition-all whitespace-nowrap"
+                                    >
+                                        Add Format
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                                    Manage alert format templates
+                                </p>
+
+                                {formatsLoading ? (
+                                    <div className="text-center py-4 text-xs text-gray-500">Loading formats...</div>
+                                ) : alertFormats.length === 0 ? (
+                                    <div className="text-center py-6 text-xs text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                        No alert formats found. Click "Add Format" to create one.
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full border-collapse border border-gray-300 dark:border-gray-600 text-xs">
+                                            <thead>
+                                                <tr className="bg-gray-100 dark:bg-gray-800">
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Alert Name</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Format Preview</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Created</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-center">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {alertFormats
+                                                    .filter(format => {
+                                                        if (!searchFormats.trim()) return true;
+                                                        const search = searchFormats.toLowerCase();
+                                                        return (format.alertName || '').toLowerCase().includes(search) ||
+                                                               (format.expectedFormat || '').toLowerCase().includes(search);
+                                                    })
+                                                    .map((format) => {
+                                                    const formatPreview = format.expectedFormat 
+                                                        ? format.expectedFormat.split('\n').slice(0, 3).join('\n') + (format.expectedFormat.split('\n').length > 3 ? '...' : '')
+                                                        : 'No format';
+                                                    return (
+                                                        <tr key={format.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                                                            <td className="border border-gray-300 dark:border-gray-600 p-2 font-medium text-xs">
+                                                                {format.alertName || 'Unknown'}
+                                                            </td>
+                                                            <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                                <pre className="text-xs font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap max-w-md overflow-hidden">
+                                                                    {formatPreview}
+                                                                </pre>
+                                                            </td>
+                                                            <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs">
+                                                                {formatDate(format.createdAt)}
+                                                            </td>
+                                                            <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                                <div className="flex gap-1.5 justify-center items-center">
+                                                                    <button
+                                                                        onClick={() => handleEditFormat(format)}
+                                                                        className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
+                                                                    >
+                                                                        Edit
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteFormat(format.id, format.alertName)}
+                                                                        className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
+                                                                    >
+                                                                        Delete
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Tab Content - Field Mappings */}
+                        {activeTab === 'mappings' && (
+                            <div>
+                                <div className="mb-3">
+                                    <input
+                                        type="text"
+                                        value={searchMappings}
+                                        onChange={(e) => setSearchMappings(e.target.value)}
+                                        placeholder="Search mappings..."
+                                        className="w-full p-2 text-xs border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                                    Manage label to JSON path mappings used for formatting alerts
+                                </p>
+                                
+                                <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                        <input
+                                            type="text"
+                                            value={newMappingLabel}
+                                            onChange={(e) => setNewMappingLabel(e.target.value)}
+                                            placeholder="Label (e.g., Source IP)"
+                                            className="p-2 text-xs border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={newMappingPath}
+                                            onChange={(e) => setNewMappingPath(e.target.value)}
+                                            placeholder="JSON Path (e.g., srcip)"
+                                            className="p-2 text-xs border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={handleAddMapping}
+                                        className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-4 py-1.5 rounded-lg text-xs font-medium hover:from-purple-700 hover:to-indigo-800 transition-all"
+                                    >
+                                        Add Mapping
+                                    </button>
+                                </div>
+
+                                {mappingsLoading ? (
+                                    <div className="text-center py-4 text-xs text-gray-500">Loading mappings...</div>
+                                ) : fieldMappings.length === 0 ? (
+                                    <div className="text-center py-6 text-xs text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                        No field mappings found. Click "Initialize Default Mappings" to add default mappings.
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full border-collapse border border-gray-300 dark:border-gray-600 text-xs">
+                                            <thead>
+                                                <tr className="bg-gray-100 dark:bg-gray-800">
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Label</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">JSON Path</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-center">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {fieldMappings[0]?.mappings && fieldMappings[0].mappings.length > 0 ? (
+                                                    fieldMappings[0].mappings
+                                                        .filter(mapping => {
+                                                            if (!searchMappings.trim()) return true;
+                                                            const search = searchMappings.toLowerCase();
+                                                            return (mapping.label || '').toLowerCase().includes(search) ||
+                                                                   (mapping.path || '').toLowerCase().includes(search);
+                                                        })
+                                                        .map((mapping, index) => (
+                                                        <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                                                            <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs">
+                                                                {mapping.label}
+                                                            </td>
+                                                            <td className="border border-gray-300 dark:border-gray-600 p-2 font-mono text-xs">
+                                                                {mapping.path}
+                                                            </td>
+                                                            <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                                <div className="flex justify-center">
+                                                                    <button
+                                                                        onClick={() => handleDeleteMapping(fieldMappings[0].id, mapping.label)}
+                                                                        className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
+                                                                    >
+                                                                        Remove
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan="3" className="border border-gray-300 dark:border-gray-600 p-2 text-center text-xs text-gray-500">
+                                                            No mappings found. Click "Initialize Default Mappings" to add default mappings.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                
+                                {fieldMappings.length === 0 && !mappingsLoading && (
+                                    <div className="mt-3 text-center">
+                                        <button
+                                            onClick={initializeFieldMappings}
+                                            className="px-4 py-1.5 text-xs bg-gray-500 text-white rounded-lg font-medium hover:bg-gray-600 transition-all"
+                                        >
+                                            Initialize Default Mappings
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Tab Content - IP Addresses */}
+                        {activeTab === 'ips' && (
+                            <div>
+                                <div className="mb-3">
+                                    <input
+                                        type="text"
+                                        value={searchIPs}
+                                        onChange={(e) => setSearchIPs(e.target.value)}
+                                        placeholder="Search IPs or users..."
+                                        className="w-full p-2 text-xs border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                                    Manage allowed IP addresses for the application
+                                </p>
+                                
+                                {/* Add IP Section */}
+                                <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                    <h3 className="text-xs font-bold mb-2 text-gray-700 dark:text-gray-300">Add New IP Address</h3>
+                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                        <input
+                                            type="text"
+                                            value={userName}
+                                            onChange={(e) => setUserName(e.target.value)}
+                                            placeholder="User Name"
+                                            className="p-2 text-xs border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                                        />
                             <input
                                 type="text"
                                 value={newIP}
                                 onChange={(e) => setNewIP(e.target.value)}
                                 placeholder="Enter IP address (e.g., 192.168.1.1 or 192.168.1.0/24)"
-                                className="flex-1 p-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-800 dark:text-gray-100"
+                                            className="p-2 text-xs border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
                                 onKeyPress={(e) => e.key === 'Enter' && handleAddIP()}
                             />
+                                    </div>
                             <button
                                 onClick={handleAddIP}
-                                className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-800 transition-all transform hover:-translate-y-0.5 hover:shadow-lg"
+                                        className="w-full bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:from-purple-700 hover:to-indigo-800 transition-all"
                             >
                                 Add IP
                             </button>
                         </div>
-                      
-                    </div>
-
-                    {/* Alert Formats Section */}
-                    <div className="mb-8">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
-                                Alert Formats ({alertFormats.length})
-                            </h2>
-                            <button
-                                onClick={() => {
-                                    setFormatToEdit(null);
-                                    setShowFormatModal(true);
-                                }}
-                                className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-6 py-2 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-800 transition-all"
-                            >
-                                Add Format
-                            </button>
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                            Manage alert format templates
-                        </p>
-
-                        {formatsLoading ? (
-                            <div className="text-center py-4 text-gray-500">Loading formats...</div>
-                        ) : alertFormats.length === 0 ? (
-                            <div className="text-center py-8 text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                                No alert formats found. Click "Add Format" to create one.
-                            </div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full border-collapse border border-gray-300 dark:border-gray-600">
-                                    <thead>
-                                        <tr className="bg-gray-100 dark:bg-gray-800">
-                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">Alert Name</th>
-                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">Format Preview</th>
-                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">Created</th>
-                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-center">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {alertFormats.map((format) => {
-                                            const formatPreview = format.expectedFormat 
-                                                ? format.expectedFormat.split('\n').slice(0, 3).join('\n') + (format.expectedFormat.split('\n').length > 3 ? '...' : '')
-                                                : 'No format';
-                                            return (
-                                                <tr key={format.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                                                    <td className="border border-gray-300 dark:border-gray-600 p-3 font-semibold">
-                                                        {format.alertName || 'Unknown'}
-                                                    </td>
-                                                    <td className="border border-gray-300 dark:border-gray-600 p-3">
-                                                        <pre className="text-xs font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap max-w-md overflow-hidden">
-                                                            {formatPreview}
-                                                        </pre>
-                                                    </td>
-                                                    <td className="border border-gray-300 dark:border-gray-600 p-3">
-                                                        {formatDate(format.createdAt)}
-                                                    </td>
-                                                    <td className="border border-gray-300 dark:border-gray-600 p-3">
-                                                        <div className="flex gap-2 justify-center items-center">
-                                                            <button
-                                                                onClick={() => handleEditFormat(format)}
-                                                                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-all text-sm font-medium whitespace-nowrap"
-                                                            >
-                                                                Edit
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleDeleteFormat(format.id, format.alertName)}
-                                                                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-all text-sm font-medium whitespace-nowrap"
-                                                            >
-                                                                Delete
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Field Mappings Section */}
-                    <div className="mb-8">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
-                                Field Mappings ({fieldMappings.length > 0 && fieldMappings[0].mappings ? fieldMappings[0].mappings.length : 0})
-                            </h2>
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                            Manage label to JSON path mappings used for formatting alerts
-                        </p>
-                        
-                        <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                            <div className="grid grid-cols-2 gap-3 mb-3">
-                                <input
-                                    type="text"
-                                    value={newMappingLabel}
-                                    onChange={(e) => setNewMappingLabel(e.target.value)}
-                                    placeholder="Label (e.g., Source IP)"
-                                    className="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                                />
-                                <input
-                                    type="text"
-                                    value={newMappingPath}
-                                    onChange={(e) => setNewMappingPath(e.target.value)}
-                                    placeholder="JSON Path (e.g., srcip)"
-                                    className="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                                />
-                            </div>
-                            <button
-                                onClick={handleAddMapping}
-                                className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-6 py-2 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-800 transition-all"
-                            >
-                                Add Mapping
-                            </button>
-                        </div>
-
-                        {mappingsLoading ? (
-                            <div className="text-center py-4 text-gray-500">Loading mappings...</div>
-                        ) : fieldMappings.length === 0 ? (
-                            <div className="text-center py-8 text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                                No field mappings found. Click "Initialize Default Mappings" to add default mappings.
-                            </div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full border-collapse border border-gray-300 dark:border-gray-600">
-                                    <thead>
-                                        <tr className="bg-gray-100 dark:bg-gray-800">
-                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">Label</th>
-                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">JSON Path</th>
-                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-center">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {fieldMappings[0]?.mappings && fieldMappings[0].mappings.length > 0 ? (
-                                            fieldMappings[0].mappings.map((mapping, index) => (
-                                                <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                                                    <td className="border border-gray-300 dark:border-gray-600 p-3">
-                                                        {mapping.label}
-                                                    </td>
-                                                    <td className="border border-gray-300 dark:border-gray-600 p-3 font-mono text-sm">
-                                                        {mapping.path}
-                                                    </td>
-                                                    <td className="border border-gray-300 dark:border-gray-600 p-3">
-                                                        <div className="flex justify-center">
-                                                            <button
-                                                                onClick={() => handleDeleteMapping(fieldMappings[0].id, mapping.label)}
-                                                                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-all text-sm font-medium whitespace-nowrap"
-                                                            >
-                                                                Remove
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        ) : (
-                                            <tr>
-                                                <td colSpan="3" className="border border-gray-300 dark:border-gray-600 p-3 text-center text-gray-500">
-                                                    No mappings found. Click "Initialize Default Mappings" to add default mappings.
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                        
-                        {fieldMappings.length === 0 && !mappingsLoading && (
-                            <div className="mt-4 text-center">
-                                <button
-                                    onClick={initializeFieldMappings}
-                                    className="px-6 py-2 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 transition-all"
-                                >
-                                    Initialize Default Mappings
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* IP List */}
-                    <div>
-                        <h2 className="text-2xl font-bold mb-4 text-gray-700 dark:text-gray-300">
-                            Allowed IP Addresses ({allowedIPs.length})
-                        </h2>
                         
                         {loading ? (
-                            <div className="text-center py-8 text-gray-500">Loading...</div>
+                                    <div className="text-center py-4 text-xs text-gray-500">Loading...</div>
                         ) : allowedIPs.length === 0 ? (
-                            <div className="text-center py-8 text-gray-500">
+                                    <div className="text-center py-6 text-xs text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-lg">
                                 No IP addresses configured. Add one above to get started.
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
-                                <table className="w-full border-collapse border border-gray-300 dark:border-gray-600">
+                                        <table className="w-full border-collapse border border-gray-300 dark:border-gray-600 text-xs">
                                     <thead>
                                         <tr className="bg-gray-100 dark:bg-gray-800">
-                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">IP Address</th>
-                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-left">Added On</th>
-                                            <th className="border border-gray-300 dark:border-gray-600 p-3 text-center">Actions</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">User Name</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">IP Address</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Added On</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-center">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {allowedIPs.map((item) => (
+                                        {allowedIPs
+                                            .filter(item => {
+                                                if (!searchIPs.trim()) return true;
+                                                const search = searchIPs.toLowerCase();
+                                                return (item.userName || '').toLowerCase().includes(search) ||
+                                                       (item.ip || '').toLowerCase().includes(search);
+                                            })
+                                            .map((item) => (
                                             <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                                                <td className="border border-gray-300 dark:border-gray-600 p-3 font-mono">
-                                                    {item.ip}
-                                                </td>
-                                                <td className="border border-gray-300 dark:border-gray-600 p-3">
-                                                    {formatDate(item.createdAt)}
-                                                </td>
-                                                <td className="border border-gray-300 dark:border-gray-600 p-3 text-center">
-                                                    <button
-                                                        onClick={() => handleDeleteIP(item.id)}
-                                                        className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-all"
-                                                    >
-                                                        Remove
-                                                    </button>
-                                                </td>
+                                                {editingIP === item.id ? (
+                                                    <>
+                                                        <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                            <input
+                                                                type="text"
+                                                                value={editUserName}
+                                                                onChange={(e) => setEditUserName(e.target.value)}
+                                                                className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-gray-100"
+                                                            />
+                                                        </td>
+                                                        <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                            <input
+                                                                type="text"
+                                                                value={editIP}
+                                                                onChange={(e) => setEditIP(e.target.value)}
+                                                                className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded font-mono dark:bg-gray-700 dark:text-gray-100"
+                                                            />
+                                                        </td>
+                                                        <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs">
+                                                            {formatDate(item.createdAt)}
+                                                        </td>
+                                                        <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                            <div className="flex gap-1 justify-center">
+                                                                <button
+                                                                    onClick={() => handleSaveEdit(item.id)}
+                                                                    className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
+                                                                >
+                                                                    Save
+                                                                </button>
+                                                                <button
+                                                                    onClick={handleCancelEdit}
+                                                                    className="bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs">
+                                                            {item.userName || 'N/A'}
+                                                        </td>
+                                                        <td className="border border-gray-300 dark:border-gray-600 p-2 font-mono text-xs">
+                                                            {item.ip}
+                                                        </td>
+                                                        <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs">
+                                                            {formatDate(item.createdAt)}
+                                                        </td>
+                                                        <td className="border border-gray-300 dark:border-gray-600 p-2 text-center">
+                                                            <div className="flex gap-1 justify-center">
+                                                                <button
+                                                                    onClick={() => handleStartEdit(item)}
+                                                                    className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteIP(item.id)}
+                                                                    className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
+                                                                >
+                                                                    Remove
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </>
+                                                )}
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
