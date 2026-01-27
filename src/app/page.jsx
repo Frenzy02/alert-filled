@@ -1237,6 +1237,124 @@ export default function Home() {
                                 </div>
                             </div>
                         </div>
+                        
+                        {/* Animated Virus Bugs Text */}
+                        <div className="flex-1 flex justify-center items-center mx-4">
+                            <div className="relative" style={{ minHeight: '60px', minWidth: '400px' }}>
+                                <style dangerouslySetInnerHTML={{__html: `
+                                    @keyframes bugCrawl1 {
+                                        0% { transform: translate(-50px, -20px) rotate(0deg); opacity: 0; }
+                                        10% { opacity: 1; }
+                                        25% { transform: translate(50px, -10px) rotate(45deg); }
+                                        50% { transform: translate(150px, 20px) rotate(90deg); }
+                                        75% { transform: translate(250px, 10px) rotate(135deg); }
+                                        90% { opacity: 1; }
+                                        100% { transform: translate(350px, -20px) rotate(180deg); opacity: 0; }
+                                    }
+                                    @keyframes bugCrawl2 {
+                                        0% { transform: translate(350px, 20px) rotate(180deg); opacity: 0; }
+                                        10% { opacity: 1; }
+                                        25% { transform: translate(250px, 10px) rotate(135deg); }
+                                        50% { transform: translate(150px, -20px) rotate(90deg); }
+                                        75% { transform: translate(50px, -10px) rotate(45deg); }
+                                        90% { opacity: 1; }
+                                        100% { transform: translate(-50px, 20px) rotate(0deg); opacity: 0; }
+                                    }
+                                    @keyframes bugCrawl3 {
+                                        0% { transform: translate(100px, -30px) rotate(-45deg); opacity: 0; }
+                                        15% { opacity: 1; }
+                                        30% { transform: translate(200px, 0px) rotate(0deg); }
+                                        60% { transform: translate(300px, 30px) rotate(45deg); }
+                                        85% { opacity: 1; }
+                                        100% { transform: translate(400px, 0px) rotate(90deg); opacity: 0; }
+                                    }
+                                    @keyframes bugCrawl4 {
+                                        0% { transform: translate(300px, 30px) rotate(135deg); opacity: 0; }
+                                        15% { opacity: 1; }
+                                        30% { transform: translate(200px, 0px) rotate(90deg); }
+                                        60% { transform: translate(100px, -30px) rotate(45deg); }
+                                        85% { opacity: 1; }
+                                        100% { transform: translate(0px, 0px) rotate(0deg); opacity: 0; }
+                                    }
+                                    @keyframes bugCrawl5 {
+                                        0% { transform: translate(150px, 40px) rotate(90deg); opacity: 0; }
+                                        20% { opacity: 1; }
+                                        40% { transform: translate(200px, -10px) rotate(45deg); }
+                                        60% { transform: translate(250px, -40px) rotate(0deg); }
+                                        80% { opacity: 1; }
+                                        100% { transform: translate(300px, -20px) rotate(-45deg); opacity: 0; }
+                                    }
+                                    @keyframes bugCrawl6 {
+                                        0% { transform: translate(200px, -40px) rotate(-90deg); opacity: 0; }
+                                        20% { opacity: 1; }
+                                        40% { transform: translate(150px, -10px) rotate(-45deg); }
+                                        60% { transform: translate(100px, 20px) rotate(0deg); }
+                                        80% { opacity: 1; }
+                                        100% { transform: translate(50px, 40px) rotate(45deg); opacity: 0; }
+                                    }
+                                    @keyframes textGlow {
+                                        0%, 100% { 
+                                            text-shadow: 0 0 5px #ff0000, 0 0 10px #ff3333, 0 0 15px #ff0000;
+                                            color: #ff4444;
+                                        }
+                                        50% { 
+                                            text-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000, 0 0 30px #ff0000;
+                                            color: #ff2222;
+                                        }
+                                    }
+                                    .virus-bug {
+                                        position: absolute;
+                                        width: 8px;
+                                        height: 8px;
+                                        background: #ff0000;
+                                        border-radius: 50% 50% 50% 0;
+                                        box-shadow: 0 0 8px #ff0000, 0 0 12px #ff3333;
+                                        z-index: 10;
+                                    }
+                                    .virus-bug::before {
+                                        content: '';
+                                        position: absolute;
+                                        width: 4px;
+                                        height: 4px;
+                                        background: #ff3333;
+                                        border-radius: 50%;
+                                        top: -2px;
+                                        left: 2px;
+                                    }
+                                    .virus-bug::after {
+                                        content: '';
+                                        position: absolute;
+                                        width: 2px;
+                                        height: 2px;
+                                        background: #ff6666;
+                                        border-radius: 50%;
+                                        top: 1px;
+                                        left: 1px;
+                                    }
+                                    .virus-text {
+                                        animation: textGlow 2s ease-in-out infinite;
+                                        position: relative;
+                                        z-index: 5;
+                                    }
+                                    .bug1 { animation: bugCrawl1 4s linear infinite; }
+                                    .bug2 { animation: bugCrawl2 5s linear infinite; animation-delay: 0.5s; }
+                                    .bug3 { animation: bugCrawl3 6s linear infinite; animation-delay: 1s; }
+                                    .bug4 { animation: bugCrawl4 5.5s linear infinite; animation-delay: 1.5s; }
+                                    .bug5 { animation: bugCrawl5 4.5s linear infinite; animation-delay: 2s; }
+                                    .bug6 { animation: bugCrawl6 5.8s linear infinite; animation-delay: 2.5s; }
+                                `}} />
+                                <div className="virus-bug bug1"></div>
+                                <div className="virus-bug bug2"></div>
+                                <div className="virus-bug bug3"></div>
+                                <div className="virus-bug bug4"></div>
+                                <div className="virus-bug bug5"></div>
+                                <div className="virus-bug bug6"></div>
+                                <h2 className="virus-text text-lg md:text-xl font-bold font-mono tracking-wider text-center">
+                                    BANATAN MO OR IKAW MABABANATAN
+                                </h2>
+                            </div>
+                        </div>
+                        
                         <div className="flex gap-2 flex-wrap">
                             <button
                                 onClick={() => setShowSavedMappingsModal(true)}
