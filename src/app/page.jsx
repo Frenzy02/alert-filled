@@ -902,6 +902,7 @@ export default function Home() {
     const [mappingSearchQuery, setMappingSearchQuery] = useState('');
     const [formatToEdit, setFormatToEdit] = useState(null);
     const [currentJsonData, setCurrentJsonData] = useState(null);
+    const [whitelistMatch, setWhitelistMatch] = useState(null); // { reason: string } when pasted alert matches a whitelist rule
     const pasteTimeoutRef = useRef(null);
 
     // Fetch saved alert formats from Firebase
@@ -937,6 +938,55 @@ export default function Home() {
 
         fetchSavedFormats();
     }, [showAddFormatModal, showSavedFormatsModal]); // Refresh when modal opens/closes
+
+    // Check pasted JSON against Whitelist Alert rules (admin tab)
+    useEffect(() => {
+        if (!currentJsonData) {
+            setWhitelistMatch(null);
+            return;
+        }
+        let cancelled = false;
+        const check = async () => {
+            try {
+                const snapshot = await getDocs(collection(db, 'whitelistAlerts'));
+                const alertName = (currentJsonData.xdr_event?.display_name || currentJsonData.event_name || '').trim();
+                const description = (currentJsonData.xdr_event?.description || currentJsonData.description || '').toString().trim();
+                const hostName = (getNestedValue(currentJsonData, 'host.name') ?? getNestedValue(currentJsonData, 'hostname') ?? '').toString().trim();
+                const processPath = (getNestedValue(currentJsonData, 'eset.processname') ?? getNestedValue(currentJsonData, 'process.executable') ?? getNestedValue(currentJsonData, 'processname') ?? '').toString().trim();
+                const alertIp = (getNestedValue(currentJsonData, 'host.ip') ?? getNestedValue(currentJsonData, 'srcip') ?? getNestedValue(currentJsonData, 'host_ip') ?? '').toString().trim();
+                const alertNameL = alertName.toLowerCase();
+                const hostNameL = hostName.toLowerCase();
+                const processPathL = processPath.toLowerCase();
+                const alertText = `${alertName} ${description} ${processPath} ${hostName}`.toLowerCase();
+                for (const docSnap of snapshot.docs) {
+                    if (cancelled) return;
+                    const r = docSnap.data();
+                    const sig = (r.alertTitleOrSignature || '').trim();
+                    const ruleAlertL = sig.toLowerCase();
+                    const appliesToAll = !!r.appliesToAllAlerts;
+                    if (!appliesToAll && sig && !alertNameL.includes(ruleAlertL) && !ruleAlertL.includes(alertNameL)) continue;
+                    const dev = (r.deviceName || '').trim();
+                    if (dev && hostNameL !== dev.toLowerCase() && !hostNameL.includes(dev.toLowerCase()) && !dev.toLowerCase().includes(hostNameL)) continue;
+                    const proc = (r.processName || '').trim();
+                    if (proc && !processPathL.includes(proc.toLowerCase()) && !proc.toLowerCase().includes(processPathL)) continue;
+                    const ip = (r.ipAddress || '').trim();
+                    if (ip && (!alertIp || (alertIp.toLowerCase() !== ip.toLowerCase() && !alertIp.includes(ip) && !ip.includes(alertIp)))) continue;
+                    const tokens = Array.isArray(r.matchTokens) ? r.matchTokens : [];
+                    if (!appliesToAll && tokens.length) {
+                        const hasToken = tokens.some((t) => alertText.includes(String(t).toLowerCase()));
+                        if (!hasToken) continue;
+                    }
+                    setWhitelistMatch({ reason: r.reason || 'Whitelisted.' });
+                    return;
+                }
+                if (!cancelled) setWhitelistMatch(null);
+            } catch (err) {
+                if (!cancelled) setWhitelistMatch(null);
+            }
+        };
+        check();
+        return () => { cancelled = true; };
+    }, [currentJsonData]);
 
     // Fetch saved field mappings from Firebase
     useEffect(() => {
@@ -1387,6 +1437,20 @@ export default function Home() {
                 </header>
 
                 {/* Main Content */}
+                {whitelistMatch && (
+                    <div className="mb-4 p-4 rounded-lg bg-emerald-900/40 border border-emerald-600/60 text-emerald-200 flex items-start gap-3">
+                        <svg className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-emerald-100">This alert is whitelisted</p>
+                            <p className="text-sm mt-1.5 text-emerald-100/90">
+                                <span className="font-medium">Reason: </span>
+                                {whitelistMatch.reason}
+                            </p>
+                        </div>
+                    </div>
+                )}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {/* Input Section */}
                     <div className="bg-slate-800/90 backdrop-blur-sm border border-slate-700 rounded-lg shadow-xl p-5">
@@ -1412,6 +1476,17 @@ export default function Home() {
                             className="w-full p-4 bg-slate-900/50 border border-slate-600 rounded-lg font-mono text-xs text-slate-200 resize-y focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder:text-slate-500"
                         />
                         <div className="flex gap-2 mt-3">
+                            <button
+                                onClick={handleConvert}
+                                disabled={!jsonInput.trim()}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl"
+                                title="Convert JSON to formatted text"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Convert
+                            </button>
                             {currentJsonData && (
                                 <button
                                     onClick={() => setShowInvestigator(true)}

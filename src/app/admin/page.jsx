@@ -29,10 +29,22 @@ export default function AdminPage() {
     const [formatsLoading, setFormatsLoading] = useState(false);
     const [showFormatModal, setShowFormatModal] = useState(false);
     const [formatToEdit, setFormatToEdit] = useState(null);
-    const [activeTab, setActiveTab] = useState('formats'); // 'formats' or 'mappings'
+    const [activeTab, setActiveTab] = useState('formats'); // 'formats' | 'mappings' | 'ips' | 'whitelistAlerts'
     const [searchFormats, setSearchFormats] = useState('');
     const [searchMappings, setSearchMappings] = useState('');
     const [searchIPs, setSearchIPs] = useState('');
+    const [searchWhitelistAlerts, setSearchWhitelistAlerts] = useState('');
+    // Whitelist Alert tab (single text block, parsed on save)
+    const [whitelistAlerts, setWhitelistAlerts] = useState([]);
+    const [whitelistAlertsLoading, setWhitelistAlertsLoading] = useState(false);
+    const [newWhitelistText, setNewWhitelistText] = useState('');
+    const [showWhitelistModal, setShowWhitelistModal] = useState(false);
+    const [editingWhitelistId, setEditingWhitelistId] = useState(null);
+    const [editAlertTitle, setEditAlertTitle] = useState('');
+    const [editProcessName, setEditProcessName] = useState('');
+    const [editDeviceName, setEditDeviceName] = useState('');
+    const [editAlertIP, setEditAlertIP] = useState('');
+    const [editReason, setEditReason] = useState('');
     const router = useRouter();
 
     // Check if already authenticated
@@ -52,6 +64,7 @@ export default function AdminPage() {
             checkIPAccess();
             fetchFieldMappings();
             fetchAlertFormats();
+            fetchWhitelistAlerts();
         }
     }, [isAuthenticated]);
 
@@ -568,6 +581,199 @@ export default function AdminPage() {
         fetchAlertFormats();
     };
 
+    // Whitelist Alert tab: fetch from Firebase
+    const fetchWhitelistAlerts = async () => {
+        try {
+            setWhitelistAlertsLoading(true);
+            const q = query(collection(db, 'whitelistAlerts'), orderBy('createdAt', 'desc'));
+            const querySnapshot = await getDocs(q);
+            const items = [];
+            querySnapshot.forEach((docSnap) => {
+                items.push({ id: docSnap.id, ...docSnap.data() });
+            });
+            setWhitelistAlerts(items);
+        } catch (err) {
+            setError('Failed to fetch whitelist alerts: ' + err.message);
+        } finally {
+            setWhitelistAlertsLoading(false);
+        }
+    };
+
+    // Parse single whitelist text block into fields
+    // Accepts flexible order: reason can be first, alert line anywhere, process label as "Process Name:" or "processname:"
+    const parseWhitelistText = (text) => {
+        const raw = (text || '').trim();
+        const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
+        let alertTitleOrSignature = '';
+        let processName = null;
+        let deviceName = null;
+        let reason = '';
+        let ipAddress = null;
+        let appliesToAllAlerts = false;
+        let matchTokens = [];
+        const processLabel = /^process\s*name\s*:?\s*$/i;
+        const processLabelAlt = /^processname\s*:?\s*$/i;
+
+        // Find process path (line after process label)
+        const procIdx = lines.findIndex((l) => processLabel.test(l) || processLabelAlt.test(l));
+        if (procIdx >= 0) {
+            processName = lines[procIdx + 1] || null;
+        }
+
+        // Candidate lines exclude process label + process path
+        const candidateLines = lines.filter((l, idx) => {
+            if (idx === procIdx) return false;
+            if (procIdx >= 0 && idx === procIdx + 1) return false;
+            return true;
+        });
+
+        // Pick alert line: prefer lines that look like alert headers, else longest line
+        const alertHeader = candidateLines.find((l) => /alert|detection|threat|event|signature/i.test(l) || /:/.test(l));
+        if (alertHeader) {
+            alertTitleOrSignature = alertHeader;
+            // Reason is the remaining candidate lines excluding the chosen alert line
+            reason = candidateLines.filter((l) => l !== alertTitleOrSignature).join(' ');
+        } else {
+            alertTitleOrSignature = '';
+            reason = candidateLines.join(' ');
+        }
+
+        // Fallbacks
+        if (!reason && lines.length > 1) {
+            reason = lines.slice(1).join(' ');
+        }
+
+        // Extract process from raw text if not set (e.g. "knime.exe")
+        if (!processName) {
+            const exeMatch = raw.match(/([A-Za-z0-9._-]+\.exe)\b/i);
+            if (exeMatch) processName = exeMatch[1];
+        }
+
+        // Extract IP if present
+        const ipMatch = raw.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/);
+        if (ipMatch) ipAddress = ipMatch[1];
+
+        // Detect "all endpoints" / "all devices" / "all servers"
+        appliesToAllAlerts = /all\s+(endpoints|endpoint|devices|hosts|machines|servers)/i.test(raw);
+
+        // Build match tokens from raw text (simple keyword extraction)
+        const stopwords = new Set(['the','and','for','with','this','that','only','as','per','is','are','was','were','to','of','on','in','by','an','a','be','or','if','it','all','authorized','whitelisted','legitimate','software','activity','process','script','remote','management','platform']);
+        matchTokens = raw
+            .toLowerCase()
+            .replace(/[^a-z0-9_.-]+/g, ' ')
+            .split(/\s+/)
+            .filter((w) => w.length > 3 && !stopwords.has(w))
+            .slice(0, 20);
+
+        const deviceMatch = reason.match(/\b([A-Z]{2}-[A-Z]{2}-[A-Z0-9-]+)\b/) || reason.match(/device\s+([A-Z0-9-]+)/i);
+        if (deviceMatch) deviceName = deviceMatch[1].trim();
+        return {
+            alertTitleOrSignature: alertTitleOrSignature.trim(),
+            processName: processName?.trim() || null,
+            deviceName: deviceName || null,
+            ipAddress,
+            reason: reason.trim() || raw,
+            rawText: raw,
+            appliesToAllAlerts,
+            matchTokens
+        };
+    };
+
+    const handleAddWhitelistAlert = async () => {
+        const parsed = parseWhitelistText(newWhitelistText);
+        if (!parsed.rawText) {
+            setError('Please paste a whitelist message');
+            return;
+        }
+        if (!parsed.reason) {
+            setError('Please include a reason/description');
+            return;
+        }
+        try {
+            await addDoc(collection(db, 'whitelistAlerts'), {
+                alertTitleOrSignature: parsed.alertTitleOrSignature,
+                processName: parsed.processName,
+                deviceName: parsed.deviceName,
+                ipAddress: parsed.ipAddress,
+                reason: parsed.reason,
+                rawText: parsed.rawText,
+                appliesToAllAlerts: parsed.appliesToAllAlerts,
+                matchTokens: parsed.matchTokens || [],
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            });
+            setNewWhitelistText('');
+            setShowWhitelistModal(false);
+            setSuccess('Whitelist alert added. It applies only when device/process match.');
+            setError('');
+            setTimeout(() => setSuccess(''), 4000);
+            fetchWhitelistAlerts();
+        } catch (err) {
+            setError('Failed to add whitelist alert: ' + err.message);
+        }
+    };
+
+    const handleDeleteWhitelistAlert = async (id) => {
+        if (!confirm('Remove this whitelist rule?')) return;
+        try {
+            await deleteDoc(doc(db, 'whitelistAlerts', id));
+            setSuccess('Whitelist rule removed.');
+            setError('');
+            setTimeout(() => setSuccess(''), 3000);
+            fetchWhitelistAlerts();
+        } catch (err) {
+            setError('Failed to remove: ' + err.message);
+        }
+    };
+
+    const handleStartEditWhitelist = (item) => {
+        setEditingWhitelistId(item.id);
+        setEditAlertTitle(item.alertTitleOrSignature || '');
+        setEditProcessName(item.processName || '');
+        setEditDeviceName(item.deviceName || '');
+        setEditAlertIP(item.ipAddress || '');
+        setEditReason(item.reason || '');
+    };
+
+    const handleCancelEditWhitelist = () => {
+        setEditingWhitelistId(null);
+        setEditAlertTitle('');
+        setEditProcessName('');
+        setEditDeviceName('');
+        setEditAlertIP('');
+        setEditReason('');
+    };
+
+    const handleSaveEditWhitelist = async (id) => {
+        const title = editAlertTitle.trim();
+        const reason = editReason.trim();
+        if (!title) {
+            setError('Alert title/signature is required');
+            return;
+        }
+        if (!reason) {
+            setError('Reason/notes is required');
+            return;
+        }
+        try {
+            await updateDoc(doc(db, 'whitelistAlerts', id), {
+                alertTitleOrSignature: title,
+                processName: (editProcessName || '').trim() || null,
+                deviceName: (editDeviceName || '').trim() || null,
+                ipAddress: (editAlertIP || '').trim() || null,
+                reason,
+                updatedAt: new Date().toISOString()
+            });
+            setSuccess('Whitelist rule updated.');
+            setError('');
+            setTimeout(() => setSuccess(''), 3000);
+            handleCancelEditWhitelist();
+            fetchWhitelistAlerts();
+        } catch (err) {
+            setError('Failed to update: ' + err.message);
+        }
+    };
+
     // Show password form if not authenticated
     if (showPasswordForm) {
         return (
@@ -617,24 +823,24 @@ export default function AdminPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 p-4 md:p-8">
-            <div className="max-w-4xl mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black p-4 md:p-8 text-slate-200">
+            <div className="max-w-5xl mx-auto bg-slate-900/80 border border-emerald-500/30 rounded-2xl shadow-2xl overflow-hidden">
                 {/* Header */}
-                <header className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-4 text-center">
+                <header className="bg-gradient-to-r from-emerald-600/80 via-cyan-600/70 to-indigo-700/80 text-white p-4 text-center">
                     <div className="flex justify-between items-center mb-2">
-                        <h1 className="text-xl md:text-2xl font-bold">🔐 Admin Panel</h1>
+                        <h1 className="text-xl md:text-2xl font-bold tracking-widest">🔐 CYBER ADMIN CONSOLE</h1>
                         <button
                             onClick={() => {
                                 localStorage.removeItem('admin_authenticated');
                                 setIsAuthenticated(false);
                                 setShowPasswordForm(true);
                             }}
-                            className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs transition-all"
+                            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition-all border border-white/20"
                         >
                             Logout
                         </button>
                     </div>
-                    <p className="text-sm opacity-90">Manage allowed IP addresses for the application</p>
+                    <p className="text-sm opacity-90">Secure access controls, mappings, and whitelist intelligence</p>
                     {!ipAllowed && isAuthenticated && (
                         <p className="text-sm opacity-75 mt-2">
                             ⚠️ Accessing via password authentication (IP not whitelisted)
@@ -643,40 +849,50 @@ export default function AdminPage() {
                 </header>
 
                 {/* Main Content */}
-                <div className="p-6 md:p-8">
+                <div className="p-6 md:p-8 bg-slate-950/40">
                     {/* Tabs for Alert Formats, Field Mappings, and IP Whitelist */}
                     <div className="mb-8">
                         {/* Tab Navigation */}
-                        <div className="flex border-b border-gray-300 dark:border-gray-600 mb-4">
+                        <div className="flex border-b border-emerald-500/30 mb-4">
                             <button
                                 onClick={() => setActiveTab('formats')}
-                                className={`px-4 py-2 text-sm font-medium transition-all ${
+                                className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all ${
                                     activeTab === 'formats'
-                                        ? 'border-b-2 border-purple-600 text-purple-600 dark:text-purple-400'
-                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                        ? 'border-b-2 border-emerald-400 text-emerald-300'
+                                        : 'text-slate-400 hover:text-slate-200'
                                 }`}
                             >
                                 Alert Formats ({alertFormats.length})
                             </button>
                             <button
                                 onClick={() => setActiveTab('mappings')}
-                                className={`px-4 py-2 text-sm font-medium transition-all ${
+                                className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all ${
                                     activeTab === 'mappings'
-                                        ? 'border-b-2 border-purple-600 text-purple-600 dark:text-purple-400'
-                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                        ? 'border-b-2 border-emerald-400 text-emerald-300'
+                                        : 'text-slate-400 hover:text-slate-200'
                                 }`}
                             >
                                 Field Mappings ({fieldMappings.length > 0 && fieldMappings[0].mappings ? fieldMappings[0].mappings.length : 0})
                             </button>
                             <button
                                 onClick={() => setActiveTab('ips')}
-                                className={`px-4 py-2 text-sm font-medium transition-all ${
+                                className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all ${
                                     activeTab === 'ips'
-                                        ? 'border-b-2 border-purple-600 text-purple-600 dark:text-purple-400'
-                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                        ? 'border-b-2 border-emerald-400 text-emerald-300'
+                                        : 'text-slate-400 hover:text-slate-200'
                                 }`}
                             >
                                 IP Address Whitelist ({allowedIPs.length})
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('whitelistAlerts')}
+                                className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all ${
+                                    activeTab === 'whitelistAlerts'
+                                        ? 'border-b-2 border-emerald-400 text-emerald-300'
+                                        : 'text-slate-400 hover:text-slate-200'
+                                }`}
+                            >
+                                Whitelist Alert ({whitelistAlerts.length})
                             </button>
                         </div>
 
@@ -999,11 +1215,11 @@ export default function AdminPage() {
                                                             {item.userName || 'N/A'}
                                                         </td>
                                                         <td className="border border-gray-300 dark:border-gray-600 p-2 font-mono text-xs">
-                                                            {item.ip}
-                                                        </td>
+                                                    {item.ip}
+                                                </td>
                                                         <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs">
-                                                            {formatDate(item.createdAt)}
-                                                        </td>
+                                                    {formatDate(item.createdAt)}
+                                                </td>
                                                         <td className="border border-gray-300 dark:border-gray-600 p-2 text-center">
                                                             <div className="flex gap-1 justify-center">
                                                                 <button
@@ -1012,20 +1228,122 @@ export default function AdminPage() {
                                                                 >
                                                                     Edit
                                                                 </button>
-                                                                <button
-                                                                    onClick={() => handleDeleteIP(item.id)}
+                                                    <button
+                                                        onClick={() => handleDeleteIP(item.id)}
                                                                     className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
-                                                                >
-                                                                    Remove
-                                                                </button>
+                                                    >
+                                                        Remove
+                                                    </button>
                                                             </div>
-                                                        </td>
+                                                </td>
                                                     </>
                                                 )}
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Tab Content - Whitelist Alert */}
+                        {activeTab === 'whitelistAlerts' && (
+                            <div>
+                                <div className="flex justify-between items-center mb-3 gap-2">
+                                    <input
+                                        type="text"
+                                        value={searchWhitelistAlerts}
+                                        onChange={(e) => setSearchWhitelistAlerts(e.target.value)}
+                                        placeholder="Search by alert, device, process, reason..."
+                                        className="flex-1 p-2 text-xs border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                                    />
+                                    <button
+                                        onClick={() => setShowWhitelistModal(true)}
+                                        className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-4 py-1.5 rounded-lg text-xs font-medium hover:from-purple-700 hover:to-indigo-800 transition-all whitespace-nowrap"
+                                    >
+                                        Add Whitelist Alert
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                                    Alerts listed here are considered whitelisted only when they match both the alert and the specific device/process/IP. Used on home page when pasting JSON.
+                                </p>
+
+                                {whitelistAlertsLoading ? (
+                                    <div className="text-center py-4 text-xs text-gray-500">Loading...</div>
+                                ) : whitelistAlerts.length === 0 ? (
+                                    <div className="text-center py-6 text-xs text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                        No whitelist rules. Click "Add Whitelist Alert" to add one. Each rule applies only when alert + device/process match.
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full border-collapse border border-gray-300 dark:border-gray-600 text-xs">
+                                            <thead>
+                                                <tr className="bg-gray-100 dark:bg-gray-800">
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Alert / Signature</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Process</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Device</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">IP</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Reason</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-center">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {whitelistAlerts
+                                                    .filter((item) => {
+                                                        if (!searchWhitelistAlerts.trim()) return true;
+                                                        const s = searchWhitelistAlerts.toLowerCase();
+                                                        return (item.alertTitleOrSignature || '').toLowerCase().includes(s) ||
+                                                               (item.processName || '').toLowerCase().includes(s) ||
+                                                               (item.deviceName || '').toLowerCase().includes(s) ||
+                                                               (item.ipAddress || '').toLowerCase().includes(s) ||
+                                                               (item.reason || '').toLowerCase().includes(s);
+                                                    })
+                                                    .map((item) => (
+                                                        <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                                                            {editingWhitelistId === item.id ? (
+                                                                <>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                                        <input value={editAlertTitle} onChange={(e) => setEditAlertTitle(e.target.value)} className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-gray-100" />
+                                                                    </td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                                        <input value={editProcessName} onChange={(e) => setEditProcessName(e.target.value)} className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-gray-100" placeholder="Process" />
+                                                                    </td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                                        <input value={editDeviceName} onChange={(e) => setEditDeviceName(e.target.value)} className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-gray-100" placeholder="Device" />
+                                                                    </td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                                        <input value={editAlertIP} onChange={(e) => setEditAlertIP(e.target.value)} className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-gray-100" placeholder="IP" />
+                                                                    </td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                                        <textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} rows={2} className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-gray-100" />
+                                                                    </td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                                        <div className="flex gap-1 justify-center">
+                                                                            <button onClick={() => handleSaveEditWhitelist(item.id)} className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs font-medium">Save</button>
+                                                                            <button onClick={handleCancelEditWhitelist} className="bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded text-xs font-medium">Cancel</button>
+                                                                        </div>
+                                                                    </td>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs max-w-[180px] truncate" title={item.alertTitleOrSignature || ''}>{item.alertTitleOrSignature || '—'}</td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs max-w-[120px] truncate" title={item.processName || ''}>{item.processName || '—'}</td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs">{item.deviceName || '—'}</td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs font-mono">{item.ipAddress || '—'}</td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs max-w-[200px] truncate" title={item.reason || ''}>{item.reason || '—'}</td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2 text-center">
+                                                                        <div className="flex gap-1 justify-center">
+                                                                            <button onClick={() => handleStartEditWhitelist(item)} className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs font-medium">Edit</button>
+                                                                            <button onClick={() => handleDeleteWhitelistAlert(item.id)} className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs font-medium">Remove</button>
+                                                                        </div>
+                                                                    </td>
+                                                                </>
+                                                            )}
+                                                        </tr>
+                                                    ))}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 )}
                             </div>
@@ -1053,6 +1371,52 @@ export default function AdminPage() {
                 formatToEdit={formatToEdit}
                 onSave={handleFormatSave}
             />
+
+            {/* Whitelist Alert Modal */}
+            {showWhitelistModal && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">Add Whitelist Alert</h2>
+                            <button
+                                onClick={() => { setShowWhitelistModal(false); setNewWhitelistText(''); }}
+                                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div className="p-4 overflow-y-auto max-h-[70vh]">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                                I-paste ang kahit anong whitelist message. Hindi kailangan ng format. Halimbawa:
+                            </p>
+                            <textarea
+                                value={newWhitelistText}
+                                onChange={(e) => setNewWhitelistText(e.target.value)}
+                                placeholder={`ESET Protect (ESET Inspect Alert): Common AutoStart registry modified by an unpopular process [A0103a]\nProcess Name:\n%LOCALAPPDATA%\\programs\\twinkle-tray\\twinkle tray.exe\nSir Justin confirmed to whitelist the twinkle tray software only for this device UC-DR-JPADLAN as legitimate software since they use it to adjust the brightness on their device.`}
+                                rows={10}
+                                className="w-full p-3 text-xs border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-800 dark:text-gray-100 font-mono whitespace-pre-wrap"
+                                autoFocus
+                            />
+                        </div>
+                        <div className="flex gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
+                            <button
+                                onClick={() => { setShowWhitelistModal(false); setNewWhitelistText(''); }}
+                                className="flex-1 px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 rounded-lg text-sm font-medium transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleAddWhitelistAlert}
+                                className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white rounded-lg text-sm font-medium transition-all"
+                            >
+                                Add Whitelist
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
