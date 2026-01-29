@@ -14,7 +14,7 @@ const ollama = new Ollama({
 const SHEET_CSV_URLS = (
     process.env.WHITELIST_SHEET_CSV_URLS ||
     process.env.WHITELIST_SHEET_CSV_URL ||
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vTBhlnIR9nfS0wF4UR8gc-vrX5nabBoUFIK0cyFKlFCnXDJnQH05G6NrGeqyh0gUp2Cywi4UoLoghja/pub?output=csv,https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5DKp_rPWCyn5k3Gxdq2920kPZFLqgCJ7VrgeyHf3KfGPpvpo9pIvBt9IBmkScmbrQK2UKFlSeG-Wd/pub?output=csv'
+    'https://docs.google.com/spreadsheets/d/e/2PACX-1vTBhlnIR9nfS0wF4UR8gc-vrX5nabBoUFIK0cyFKlFCnXDJnQH05G6NrGeqyh0gUp2Cywi4UoLoghja/pub?output=csv'
 ).split(',').map((u) => u.trim()).filter(Boolean);
 const CACHE_TTL_MS = 5 * 60 * 1000;
 let cachedMessages = null;
@@ -85,11 +85,15 @@ const getRemediationStatus = (text) => {
 const buildMessagesFromSheet = (csvText) => {
     const rows = parseCsv(csvText);
     if (!rows.length) return [];
-    const header = rows[0].map((h) => h.trim().toLowerCase());
-    const colAlert = header.indexOf('alert name');
-    const colAction = header.indexOf('action');
-    const colConfirmation = header.indexOf('confirmation');
+    const header = rows[0].map((h) => h.trim());
+    const headerLower = header.map((h) => h.toLowerCase());
+    const colAlert = headerLower.indexOf('alert name');
+    const colAction = headerLower.indexOf('action');
+    const colConfirmation = headerLower.indexOf('confirmation');
     const colValue = 2; // column C often holds value/detail
+    const colCaseStatus = headerLower.indexOf('case status');
+    const colVerification = headerLower.indexOf('verification');
+    const colRemediation = headerLower.indexOf('remediation');
 
     const messages = [];
     let currentCaseStatus = '';
@@ -97,10 +101,18 @@ const buildMessagesFromSheet = (csvText) => {
     let currentRemediation = '';
     for (let i = 1; i < rows.length; i++) {
         const r = rows[i];
+        const record = {};
+        header.forEach((key, idx) => {
+            const k = key || `col_${idx + 1}`;
+            record[k] = (r[idx] || '').trim();
+        });
         const alertName = colAlert >= 0 ? (r[colAlert] || '').trim() : '';
         const action = colAction >= 0 ? (r[colAction] || '').trim() : '';
         const value = r[colValue] ? r[colValue].trim() : '';
         const confirmation = colConfirmation >= 0 ? (r[colConfirmation] || '').trim() : '';
+        const caseStatusCell = colCaseStatus >= 0 ? (r[colCaseStatus] || '').trim() : '';
+        const verificationCell = colVerification >= 0 ? (r[colVerification] || '').trim() : '';
+        const remediationCell = colRemediation >= 0 ? (r[colRemediation] || '').trim() : '';
         const caseFromAlert = getCaseStatus(alertName);
         const verificationFromAlert = getVerificationStatus(alertName);
         const remediationFromAlert = getRemediationStatus(alertName);
@@ -112,14 +124,15 @@ const buildMessagesFromSheet = (csvText) => {
         }
         if (!alertName && !action && !value && !confirmation) continue;
         const statusText = `${alertName} ${confirmation}`;
-        const caseStatus = getCaseStatus(statusText) || currentCaseStatus || '';
-        const verification = getVerificationStatus(statusText) || currentVerification || '';
-        const remediation = getRemediationStatus(statusText) || currentRemediation || '';
+        const caseStatus = caseStatusCell || getCaseStatus(statusText) || currentCaseStatus || '';
+        const verification = verificationCell || getVerificationStatus(statusText) || currentVerification || '';
+        const remediation = remediationCell || getRemediationStatus(statusText) || currentRemediation || '';
         messages.push({
             alertName,
             action,
             value,
             confirmation,
+            record,
             caseStatus,
             verification,
             remediation
@@ -190,7 +203,11 @@ Respond with strict JSON only, no markdown:
             alertData
         };
 
-        const userPrompt = `Whitelist messages:\n${messages.map((m, i) => `${i + 1}. CASE=${m.caseStatus} | VERIFICATION=${m.verification} | REMEDIATION=${m.remediation} | ALERT=${m.alertName} | ACTION=${m.action} | VALUE=${m.value} | CONFIRMATION=${m.confirmation}`).join('\n')}\n\nAlert context:\n${JSON.stringify(context, null, 2)}\n\nReturn JSON only. If matched, return matchedIndex (1-based).`;
+        const userPrompt = `Whitelist messages:\n${messages.map((m, i) => {
+            const fields = Object.entries(m.record || {}).filter(([, v]) => v);
+            const fieldText = fields.map(([k, v]) => `${k}=${v}`).join(' | ');
+            return `${i + 1}. CASE=${m.caseStatus} | VERIFICATION=${m.verification} | REMEDIATION=${m.remediation} | ${fieldText}`;
+        }).join('\n')}\n\nAlert context:\n${JSON.stringify(context, null, 2)}\n\nReturn JSON only. If matched, return matchedIndex (1-based).`;
 
         const response = await ollama.chat({
             model: 'gpt-oss:20b',
@@ -215,7 +232,7 @@ Respond with strict JSON only, no markdown:
         return NextResponse.json({
             whitelisted: !!parsed.whitelisted && !!matched,
             reason: String(parsed.reason || ''),
-            matchedMessage: matched ? [matched.alertName, matched.action, matched.value, matched.confirmation].filter(Boolean).join(' - ') : '',
+            matchedMessage: matched ? Object.entries(matched.record || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join(' | ') : '',
             status: matched?.caseStatus || '',
             verification: matched?.verification || '',
             remediation: matched?.remediation || ''

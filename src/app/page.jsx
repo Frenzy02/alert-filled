@@ -886,7 +886,6 @@ export default function Home() {
     const [currentJsonData, setCurrentJsonData] = useState(null);
     const [whitelistMatch, setWhitelistMatch] = useState(null); // { reason, status, verification, remediation }
     const [whitelistLoading, setWhitelistLoading] = useState(false);
-    const [whitelistChecked, setWhitelistChecked] = useState(false);
     const lastWhitelistRef = useRef({ json: '', result: null });
     const pasteTimeoutRef = useRef(null);
 
@@ -929,41 +928,24 @@ export default function Home() {
         if (!currentJsonData) {
             setWhitelistMatch(null);
             setWhitelistLoading(false);
-            setWhitelistChecked(false);
             return;
         }
         let cancelled = false;
         const check = async () => {
             try {
                 if (!cancelled) {
-                const startedAt = Date.now();
                     const rawJson = jsonInput.trim();
-                if (rawJson && lastWhitelistRef.current.json === rawJson) {
-                    setWhitelistMatch(lastWhitelistRef.current.result);
-                    setWhitelistChecked(true);
-                    setWhitelistLoading(false);
-                    return;
-                }
-                setWhitelistChecked(false);
-                setWhitelistLoading(true);
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
-                let aiJson = null;
-                try {
+                    if (rawJson && lastWhitelistRef.current.json === rawJson) {
+                        setWhitelistMatch(lastWhitelistRef.current.result);
+                        return;
+                    }
+                    setWhitelistLoading(true);
                     const aiRes = await fetch('/api/whitelist-check', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ alertData: currentJsonData }),
-                        signal: controller.signal
+                        body: JSON.stringify({ alertData: currentJsonData })
                     });
-                    aiJson = await aiRes.json();
-                } catch {
-                    aiJson = null;
-                } finally {
-                    clearTimeout(timeoutId);
-                }
-
-                const applyResult = () => {
+                    const aiJson = await aiRes.json();
                     if (aiJson?.whitelisted) {
                         const reason = aiJson.matchedMessage || aiJson.reason || 'Whitelisted.';
                         const status = aiJson.status || 'Whitelisted';
@@ -972,33 +954,16 @@ export default function Home() {
                         const result = { reason, status, verification, remediation };
                         lastWhitelistRef.current = { json: rawJson, result };
                         setWhitelistMatch(result);
-                        setWhitelistChecked(true);
-                        setWhitelistLoading(false);
                         return;
                     }
                     lastWhitelistRef.current = { json: rawJson, result: null };
                     setWhitelistMatch(null);
-                    setWhitelistChecked(true);
-                    setWhitelistLoading(false);
-                };
-
-                const elapsed = Date.now() - startedAt;
-                const minDelay = 4000;
-                if (elapsed < minDelay) {
-                    setTimeout(() => {
-                        if (!cancelled) applyResult();
-                    }, minDelay - elapsed);
-                } else {
-                    applyResult();
                 }
-                }
-        } catch (err) {
-            if (!cancelled) {
-                setWhitelistMatch(null);
-                setWhitelistChecked(true);
-                setWhitelistLoading(false);
+            } catch (err) {
+                if (!cancelled) setWhitelistMatch(null);
+            } finally {
+                if (!cancelled) setWhitelistLoading(false);
             }
-        }
         };
         check();
         return () => { cancelled = true; };
@@ -1492,17 +1457,6 @@ export default function Home() {
                     <div className="mb-4 p-4 rounded-lg bg-slate-900/60 border border-slate-600/60 text-slate-200 flex items-center gap-3">
                         <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-300 border-t-transparent" />
                         <span className="text-sm">Checking case status...</span>
-                    </div>
-                )}
-                {whitelistChecked && !whitelistLoading && !whitelistMatch && (
-                    <div className="mb-4 p-4 rounded-lg bg-slate-900/60 border border-slate-600/60 text-slate-200 flex items-start gap-3">
-                        <svg className="w-5 h-5 text-slate-300 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-slate-100">No case status match found</p>
-                            <p className="text-sm mt-1 text-slate-300">This JSON does not match any whitelist/confirmed/remediated entries.</p>
-                        </div>
                     </div>
                 )}
                 {whitelistMatch && !whitelistLoading && (
