@@ -43,6 +43,7 @@ export default function AdminPage() {
     const [editAlertTitle, setEditAlertTitle] = useState('');
     const [editProcessName, setEditProcessName] = useState('');
     const [editDeviceName, setEditDeviceName] = useState('');
+    const [editTenantName, setEditTenantName] = useState('');
     const [editAlertIP, setEditAlertIP] = useState('');
     const [editReason, setEditReason] = useState('');
     const router = useRouter();
@@ -607,6 +608,7 @@ export default function AdminPage() {
         let alertTitleOrSignature = '';
         let processName = null;
         let deviceName = null;
+        let tenantName = null;
         let reason = '';
         let ipAddress = null;
         let appliesToAllAlerts = false;
@@ -653,8 +655,8 @@ export default function AdminPage() {
         const ipMatch = raw.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/);
         if (ipMatch) ipAddress = ipMatch[1];
 
-        // Detect "all endpoints" / "all devices" / "all servers"
-        appliesToAllAlerts = /all\s+(endpoints|endpoint|devices|hosts|machines|servers)/i.test(raw);
+        // Detect "all endpoints" / "all devices" / "all servers" / "all alerts"
+        appliesToAllAlerts = /all\s+(endpoints|endpoint|devices|hosts|machines|servers|alerts|alert names)/i.test(raw);
 
         // Build match tokens from raw text (simple keyword extraction)
         const stopwords = new Set(['the','and','for','with','this','that','only','as','per','is','are','was','were','to','of','on','in','by','an','a','be','or','if','it','all','authorized','whitelisted','legitimate','software','activity','process','script','remote','management','platform']);
@@ -667,10 +669,14 @@ export default function AdminPage() {
 
         const deviceMatch = reason.match(/\b([A-Z]{2}-[A-Z]{2}-[A-Z0-9-]+)\b/) || reason.match(/device\s+([A-Z0-9-]+)/i);
         if (deviceMatch) deviceName = deviceMatch[1].trim();
+
+        const tenantMatch = raw.match(/tenant\s+([A-Za-z0-9._-]+)/i) || reason.match(/tenant\s+([A-Za-z0-9._-]+)/i);
+        if (tenantMatch) tenantName = tenantMatch[1].trim();
         return {
             alertTitleOrSignature: alertTitleOrSignature.trim(),
             processName: processName?.trim() || null,
             deviceName: deviceName || null,
+            tenantName: tenantName || null,
             ipAddress,
             reason: reason.trim() || raw,
             rawText: raw,
@@ -694,6 +700,7 @@ export default function AdminPage() {
                 alertTitleOrSignature: parsed.alertTitleOrSignature,
                 processName: parsed.processName,
                 deviceName: parsed.deviceName,
+                tenantName: parsed.tenantName,
                 ipAddress: parsed.ipAddress,
                 reason: parsed.reason,
                 rawText: parsed.rawText,
@@ -731,6 +738,7 @@ export default function AdminPage() {
         setEditAlertTitle(item.alertTitleOrSignature || '');
         setEditProcessName(item.processName || '');
         setEditDeviceName(item.deviceName || '');
+        setEditTenantName(item.tenantName || '');
         setEditAlertIP(item.ipAddress || '');
         setEditReason(item.reason || '');
     };
@@ -740,6 +748,7 @@ export default function AdminPage() {
         setEditAlertTitle('');
         setEditProcessName('');
         setEditDeviceName('');
+        setEditTenantName('');
         setEditAlertIP('');
         setEditReason('');
     };
@@ -760,6 +769,7 @@ export default function AdminPage() {
                 alertTitleOrSignature: title,
                 processName: (editProcessName || '').trim() || null,
                 deviceName: (editDeviceName || '').trim() || null,
+                tenantName: (editTenantName || '').trim() || null,
                 ipAddress: (editAlertIP || '').trim() || null,
                 reason,
                 updatedAt: new Date().toISOString()
@@ -883,16 +893,6 @@ export default function AdminPage() {
                                 }`}
                             >
                                 IP Address Whitelist ({allowedIPs.length})
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('whitelistAlerts')}
-                                className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all ${
-                                    activeTab === 'whitelistAlerts'
-                                        ? 'border-b-2 border-emerald-400 text-emerald-300'
-                                        : 'text-slate-400 hover:text-slate-200'
-                                }`}
-                            >
-                                Whitelist Alert ({whitelistAlerts.length})
                             </button>
                         </div>
 
@@ -1248,7 +1248,7 @@ export default function AdminPage() {
                         )}
 
                         {/* Tab Content - Whitelist Alert */}
-                        {activeTab === 'whitelistAlerts' && (
+                        {false && (
                             <div>
                                 <div className="flex justify-between items-center mb-3 gap-2">
                                     <input
@@ -1280,9 +1280,11 @@ export default function AdminPage() {
                                         <table className="w-full border-collapse border border-gray-300 dark:border-gray-600 text-xs">
                                             <thead>
                                                 <tr className="bg-gray-100 dark:bg-gray-800">
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Message</th>
                                                     <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Alert / Signature</th>
                                                     <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Process</th>
                                                     <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Device</th>
+                                                    <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Tenant</th>
                                                     <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">IP</th>
                                                     <th className="border border-gray-300 dark:border-gray-600 p-2 text-left">Reason</th>
                                                     <th className="border border-gray-300 dark:border-gray-600 p-2 text-center">Actions</th>
@@ -1293,9 +1295,11 @@ export default function AdminPage() {
                                                     .filter((item) => {
                                                         if (!searchWhitelistAlerts.trim()) return true;
                                                         const s = searchWhitelistAlerts.toLowerCase();
-                                                        return (item.alertTitleOrSignature || '').toLowerCase().includes(s) ||
+                                                        return (item.rawText || '').toLowerCase().includes(s) ||
+                                                               (item.alertTitleOrSignature || '').toLowerCase().includes(s) ||
                                                                (item.processName || '').toLowerCase().includes(s) ||
                                                                (item.deviceName || '').toLowerCase().includes(s) ||
+                                                               (item.tenantName || '').toLowerCase().includes(s) ||
                                                                (item.ipAddress || '').toLowerCase().includes(s) ||
                                                                (item.reason || '').toLowerCase().includes(s);
                                                     })
@@ -1313,6 +1317,9 @@ export default function AdminPage() {
                                                                         <input value={editDeviceName} onChange={(e) => setEditDeviceName(e.target.value)} className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-gray-100" placeholder="Device" />
                                                                     </td>
                                                                     <td className="border border-gray-300 dark:border-gray-600 p-2">
+                                                                        <input value={editTenantName} onChange={(e) => setEditTenantName(e.target.value)} className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-gray-100" placeholder="Tenant" />
+                                                                    </td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2">
                                                                         <input value={editAlertIP} onChange={(e) => setEditAlertIP(e.target.value)} className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-gray-100" placeholder="IP" />
                                                                     </td>
                                                                     <td className="border border-gray-300 dark:border-gray-600 p-2">
@@ -1327,9 +1334,11 @@ export default function AdminPage() {
                                                                 </>
                                                             ) : (
                                                                 <>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs max-w-[260px] truncate" title={item.rawText || ''}>{item.rawText || '—'}</td>
                                                                     <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs max-w-[180px] truncate" title={item.alertTitleOrSignature || ''}>{item.alertTitleOrSignature || '—'}</td>
                                                                     <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs max-w-[120px] truncate" title={item.processName || ''}>{item.processName || '—'}</td>
                                                                     <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs">{item.deviceName || '—'}</td>
+                                                                    <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs">{item.tenantName || '—'}</td>
                                                                     <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs font-mono">{item.ipAddress || '—'}</td>
                                                                     <td className="border border-gray-300 dark:border-gray-600 p-2 text-xs max-w-[200px] truncate" title={item.reason || ''}>{item.reason || '—'}</td>
                                                                     <td className="border border-gray-300 dark:border-gray-600 p-2 text-center">

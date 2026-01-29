@@ -884,7 +884,10 @@ export default function Home() {
     const [mappingSearchQuery, setMappingSearchQuery] = useState('');
     const [formatToEdit, setFormatToEdit] = useState(null);
     const [currentJsonData, setCurrentJsonData] = useState(null);
-    const [whitelistMatch, setWhitelistMatch] = useState(null); // { reason: string } when pasted alert matches a whitelist rule
+    const [whitelistMatch, setWhitelistMatch] = useState(null); // { reason, status, verification, remediation }
+    const [whitelistLoading, setWhitelistLoading] = useState(false);
+    const [whitelistChecked, setWhitelistChecked] = useState(false);
+    const lastWhitelistRef = useRef({ json: '', result: null });
     const pasteTimeoutRef = useRef(null);
 
     // Fetch saved alert formats from Firebase
@@ -925,45 +928,45 @@ export default function Home() {
     useEffect(() => {
         if (!currentJsonData) {
             setWhitelistMatch(null);
+            setWhitelistLoading(false);
+            setWhitelistChecked(false);
             return;
         }
         let cancelled = false;
         const check = async () => {
             try {
-                const snapshot = await getDocs(collection(db, 'whitelistAlerts'));
-                const alertName = (currentJsonData.xdr_event?.display_name || currentJsonData.event_name || '').trim();
-                const description = (currentJsonData.xdr_event?.description || currentJsonData.description || '').toString().trim();
-                const hostName = (getNestedValue(currentJsonData, 'host.name') ?? getNestedValue(currentJsonData, 'hostname') ?? '').toString().trim();
-                const processPath = (getNestedValue(currentJsonData, 'eset.processname') ?? getNestedValue(currentJsonData, 'process.executable') ?? getNestedValue(currentJsonData, 'processname') ?? '').toString().trim();
-                const alertIp = (getNestedValue(currentJsonData, 'host.ip') ?? getNestedValue(currentJsonData, 'srcip') ?? getNestedValue(currentJsonData, 'host_ip') ?? '').toString().trim();
-                const alertNameL = alertName.toLowerCase();
-                const hostNameL = hostName.toLowerCase();
-                const processPathL = processPath.toLowerCase();
-                const alertText = `${alertName} ${description} ${processPath} ${hostName}`.toLowerCase();
-                for (const docSnap of snapshot.docs) {
-                    if (cancelled) return;
-                    const r = docSnap.data();
-                    const sig = (r.alertTitleOrSignature || '').trim();
-                    const ruleAlertL = sig.toLowerCase();
-                    const appliesToAll = !!r.appliesToAllAlerts;
-                    if (!appliesToAll && sig && !alertNameL.includes(ruleAlertL) && !ruleAlertL.includes(alertNameL)) continue;
-                    const dev = (r.deviceName || '').trim();
-                    if (dev && hostNameL !== dev.toLowerCase() && !hostNameL.includes(dev.toLowerCase()) && !dev.toLowerCase().includes(hostNameL)) continue;
-                    const proc = (r.processName || '').trim();
-                    if (proc && !processPathL.includes(proc.toLowerCase()) && !proc.toLowerCase().includes(processPathL)) continue;
-                    const ip = (r.ipAddress || '').trim();
-                    if (ip && (!alertIp || (alertIp.toLowerCase() !== ip.toLowerCase() && !alertIp.includes(ip) && !ip.includes(alertIp)))) continue;
-                    const tokens = Array.isArray(r.matchTokens) ? r.matchTokens : [];
-                    if (!appliesToAll && tokens.length) {
-                        const hasToken = tokens.some((t) => alertText.includes(String(t).toLowerCase()));
-                        if (!hasToken) continue;
+                if (!cancelled) {
+                    const rawJson = jsonInput.trim();
+                    if (rawJson && lastWhitelistRef.current.json === rawJson) {
+                        setWhitelistMatch(lastWhitelistRef.current.result);
+                        return;
                     }
-                    setWhitelistMatch({ reason: r.reason || 'Whitelisted.' });
-                    return;
+                    setWhitelistLoading(true);
+                    const aiRes = await fetch('/api/whitelist-check', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ alertData: currentJsonData })
+                    });
+                    const aiJson = await aiRes.json();
+                    if (aiJson?.whitelisted) {
+                        const reason = aiJson.matchedMessage || aiJson.reason || 'Whitelisted.';
+                        const status = aiJson.status || 'Whitelisted';
+                        const verification = aiJson.verification || '';
+                        const remediation = aiJson.remediation || '';
+                        const result = { reason, status, verification, remediation };
+                        lastWhitelistRef.current = { json: rawJson, result };
+                        setWhitelistMatch(result);
+                        setWhitelistChecked(true);
+                        return;
+                    }
+                    lastWhitelistRef.current = { json: rawJson, result: null };
+                    setWhitelistMatch(null);
+                    setWhitelistChecked(true);
                 }
-                if (!cancelled) setWhitelistMatch(null);
             } catch (err) {
                 if (!cancelled) setWhitelistMatch(null);
+            } finally {
+                if (!cancelled) setWhitelistLoading(false);
             }
         };
         check();
@@ -1168,6 +1171,7 @@ export default function Home() {
         setCurrentJsonData(null);
         setReportIntroTemplate('');
         setFormattedHeader('');
+        setWhitelistLoading(false);
         setError('');
         setSuccess('');
     };
@@ -1453,13 +1457,39 @@ export default function Home() {
                 </header>
 
                 {/* Main Content */}
-                {whitelistMatch && (
+                {whitelistLoading && (
+                    <div className="mb-4 p-4 rounded-lg bg-slate-900/60 border border-slate-600/60 text-slate-200 flex items-center gap-3">
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-300 border-t-transparent" />
+                        <span className="text-sm">Checking case status...</span>
+                    </div>
+                )}
+                {whitelistChecked && !whitelistLoading && !whitelistMatch && (
+                    <div className="mb-4 p-4 rounded-lg bg-slate-900/60 border border-slate-600/60 text-slate-200 flex items-start gap-3">
+                        <svg className="w-5 h-5 text-slate-300 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-slate-100">No case status match found</p>
+                            <p className="text-sm mt-1 text-slate-300">This JSON does not match any whitelist/confirmed/remediated entries.</p>
+                        </div>
+                    </div>
+                )}
+                {whitelistMatch && !whitelistLoading && (
                     <div className="mb-4 p-4 rounded-lg bg-emerald-900/40 border border-emerald-600/60 text-emerald-200 flex items-start gap-3">
                         <svg className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-emerald-100">This alert is whitelisted</p>
+                            <p className="font-semibold text-emerald-100">Case status found</p>
+                            {whitelistMatch.status && (
+                                <p className="text-xs mt-1 text-emerald-200/80">Case status: {whitelistMatch.status}</p>
+                            )}
+                            {whitelistMatch.verification && (
+                                <p className="text-xs mt-1 text-emerald-200/80">Verification: {whitelistMatch.verification}</p>
+                            )}
+                            {whitelistMatch.remediation && (
+                                <p className="text-xs mt-1 text-emerald-200/80">Remediation: {whitelistMatch.remediation}</p>
+                            )}
                             <p className="text-sm mt-1.5 text-emerald-100/90">
                                 <span className="font-medium">Reason: </span>
                                 {whitelistMatch.reason}
