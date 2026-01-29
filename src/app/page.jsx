@@ -887,6 +887,8 @@ export default function Home() {
     const [jsonInput, setJsonInput] = useState('');
     const [textOutput, setTextOutput] = useState('');
     const [reportFormat, setReportFormat] = useState('');
+    const [reportIntroTemplate, setReportIntroTemplate] = useState('');
+    const [formattedHeader, setFormattedHeader] = useState('');
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [showAddFormatModal, setShowAddFormatModal] = useState(false);
@@ -1094,8 +1096,34 @@ export default function Home() {
         }
     };
 
+    const reportIntroTemplates = [
+        "We’ve received an alert about an [Alert Name].",
+        "This is to inform you that we’ve received an alert about an [Alert Name].",
+        "We are informing you that an [Alert Name] has been triggered.",
+        "Please be advised that we’ve received an alert about an [Alert Name].",
+        "We’ve received an alert regarding an [Alert Name]."
+    ];
+
+    const formattedOutputHeaders = [
+        "Here are the additional details for this alert.",
+        "Here are the other details regarding this alert.",
+        "Please find the further details for this alert.",
+        "Here are the remaining details for this alert.",
+        "Below are the other details for this alert."
+    ];
+
+    const pickRandom = (items) => items[Math.floor(Math.random() * items.length)];
+
+    const ensureRandomHeaders = () => {
+        const intro = reportIntroTemplate || pickRandom(reportIntroTemplates);
+        const header = formattedHeader || pickRandom(formattedOutputHeaders);
+        if (!reportIntroTemplate) setReportIntroTemplate(intro);
+        if (!formattedHeader) setFormattedHeader(header);
+        return { intro, header };
+    };
+
     // Generate report format output
-    const generateReportFormat = (data) => {
+    const generateReportFormat = (data, introTemplate) => {
         // Extract alert name
         const alertName = data.xdr_event?.display_name || data.event_name || 'Unknown Alert';
         
@@ -1106,12 +1134,18 @@ export default function Home() {
         // Extract description
         const description = data.xdr_event?.description || data.description || '';
         
+        const intro = (introTemplate || pickRandom(reportIntroTemplates)).replace('[Alert Name]', alertName);
         // Build the report format - simple format for all alerts
-        let report = `Hello sirs we receive an alert about ${alertName}\n\n`;
+        let report = `${intro}\n\n`;
         report += `${dateTime}\n\n`;
         report += `${description}`;
         
         return report;
+    };
+
+    const handleJsonPaste = () => {
+        setReportIntroTemplate(pickRandom(reportIntroTemplates));
+        setFormattedHeader(pickRandom(formattedOutputHeaders));
     };
 
     const handleConvert = async () => {
@@ -1127,13 +1161,13 @@ export default function Home() {
             // Parse and store JSON data for investigator
             const parsedData = JSON.parse(input);
             setCurrentJsonData(parsedData);
-            
+            const { intro, header } = ensureRandomHeaders();
             const output = await convertJsonToText(input);
-            const outputWithHeader = `Here are the other details for this alert po\n\n${output || ''}`;
+            const outputWithHeader = `${header}\n\n${output || ''}`;
             setTextOutput(outputWithHeader);
             
             // Generate report format
-            const report = generateReportFormat(parsedData);
+            const report = generateReportFormat(parsedData, intro);
             setReportFormat(report);
             
             setError('');
@@ -1153,6 +1187,8 @@ export default function Home() {
         setTextOutput('');
         setReportFormat('');
         setCurrentJsonData(null);
+        setReportIntroTemplate('');
+        setFormattedHeader('');
         setError('');
         setSuccess('');
     };
@@ -1238,12 +1274,13 @@ export default function Home() {
                     setCurrentJsonData(parsedData);
                     
                     // Convert JSON to formatted text
+                    const { intro, header } = ensureRandomHeaders();
                     const output = await convertJsonToText(input);
-                    const outputWithHeader = `Here are the other details for this alert po\n\n${output || ''}`;
+                    const outputWithHeader = `${header}\n\n${output || ''}`;
                     setTextOutput(outputWithHeader);
                     
                     // Generate report format
-                    const report = generateReportFormat(parsedData);
+                    const report = generateReportFormat(parsedData, intro);
                     setReportFormat(report);
                     
                     setError('');
@@ -1471,6 +1508,7 @@ export default function Home() {
                             id="jsonInput"
                             value={jsonInput}
                             onChange={(e) => setJsonInput(e.target.value)}
+                            onPaste={handleJsonPaste}
                             placeholder="Paste JSON alert data here..."
                             rows={18}
                             className="w-full p-4 bg-slate-900/50 border border-slate-600 rounded-lg font-mono text-xs text-slate-200 resize-y focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder:text-slate-500"
