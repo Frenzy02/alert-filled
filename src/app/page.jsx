@@ -936,18 +936,34 @@ export default function Home() {
         const check = async () => {
             try {
                 if (!cancelled) {
+                const startedAt = Date.now();
                     const rawJson = jsonInput.trim();
-                    if (rawJson && lastWhitelistRef.current.json === rawJson) {
-                        setWhitelistMatch(lastWhitelistRef.current.result);
-                        return;
-                    }
-                    setWhitelistLoading(true);
+                if (rawJson && lastWhitelistRef.current.json === rawJson) {
+                    setWhitelistMatch(lastWhitelistRef.current.result);
+                    setWhitelistChecked(true);
+                    setWhitelistLoading(false);
+                    return;
+                }
+                setWhitelistChecked(false);
+                setWhitelistLoading(true);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                let aiJson = null;
+                try {
                     const aiRes = await fetch('/api/whitelist-check', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ alertData: currentJsonData })
+                        body: JSON.stringify({ alertData: currentJsonData }),
+                        signal: controller.signal
                     });
-                    const aiJson = await aiRes.json();
+                    aiJson = await aiRes.json();
+                } catch {
+                    aiJson = null;
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+
+                const applyResult = () => {
                     if (aiJson?.whitelisted) {
                         const reason = aiJson.matchedMessage || aiJson.reason || 'Whitelisted.';
                         const status = aiJson.status || 'Whitelisted';
@@ -957,17 +973,32 @@ export default function Home() {
                         lastWhitelistRef.current = { json: rawJson, result };
                         setWhitelistMatch(result);
                         setWhitelistChecked(true);
+                        setWhitelistLoading(false);
                         return;
                     }
                     lastWhitelistRef.current = { json: rawJson, result: null };
                     setWhitelistMatch(null);
                     setWhitelistChecked(true);
+                    setWhitelistLoading(false);
+                };
+
+                const elapsed = Date.now() - startedAt;
+                const minDelay = 4000;
+                if (elapsed < minDelay) {
+                    setTimeout(() => {
+                        if (!cancelled) applyResult();
+                    }, minDelay - elapsed);
+                } else {
+                    applyResult();
                 }
-            } catch (err) {
-                if (!cancelled) setWhitelistMatch(null);
-            } finally {
-                if (!cancelled) setWhitelistLoading(false);
+                }
+        } catch (err) {
+            if (!cancelled) {
+                setWhitelistMatch(null);
+                setWhitelistChecked(true);
+                setWhitelistLoading(false);
             }
+        }
         };
         check();
         return () => { cancelled = true; };
