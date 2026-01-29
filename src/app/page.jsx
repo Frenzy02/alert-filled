@@ -189,19 +189,9 @@ function detectFieldOrder(fields, alertName) {
 function formatOutput(fields) {
     let output = '';
     
-    // Alert name
-    if (fields.alertName) {
-        output += fields.alertName + '\n\n';
-    }
-    
     // Date and time
     if (fields.dateTime) {
         output += fields.dateTime + '\n\n';
-    }
-    
-    // Description
-    if (fields.description) {
-        output += fields.description + '\n\n';
     }
     
     // Intelligently detect and order fields based on alert type
@@ -353,9 +343,7 @@ function formatWithSavedConfig(data, formatConfig, globalMappings = []) {
     
     // Priority 1: Use field mappings to build output directly (most reliable)
     if (formatConfig && formatConfig.fieldMappings && formatConfig.fieldMappings.length > 0) {
-        let output = `${alertName}\n\n`;
-        output += `${dateTime}\n\n`;
-        output += `${description}\n\n`;
+        let output = `${dateTime}\n\n`;
         
         // Use field mappings to build output in the exact order specified
         formatConfig.fieldMappings.forEach(mapping => {
@@ -455,10 +443,7 @@ function formatWithSavedConfig(data, formatConfig, globalMappings = []) {
         // Merge default mappings (formatConfig.fieldMappings take priority)
         Object.assign(labelToPathMap, defaultMappings);
         
-        // Replace first line with actual alert name
-        if (lines.length > 0) {
-            output += alertName + '\n\n';
-        }
+        // Skip alert title in formatted output
         
         // Process remaining lines - treat them as labels and find values
         for (let i = 1; i < lines.length; i++) {
@@ -478,9 +463,8 @@ function formatWithSavedConfig(data, formatConfig, globalMappings = []) {
                 continue;
             }
             
-            // Handle "Description" label - output description directly without label
+            // Skip description in formatted output
             if (lineLower === 'description') {
-                output += description + '\n\n';
                 continue;
             }
             
@@ -555,9 +539,7 @@ function formatWithSavedConfig(data, formatConfig, globalMappings = []) {
     
     // Priority 3: ESET format fallback
     if (isESETFormat) {
-        let output = `${alertName}\n\n`;
-        output += `${dateTime}\n\n`;
-        output += `${description}\n\n`;
+        let output = `${dateTime}\n\n`;
         
         const esetFieldMappings = [
             { path: 'hostip', label: 'Host IP' },
@@ -579,9 +561,7 @@ function formatWithSavedConfig(data, formatConfig, globalMappings = []) {
     }
     
     // Fallback: Default format
-    let output = `${alertName}\n\n`;
-    output += `${dateTime}\n\n`;
-    output += `${description}\n\n`;
+    let output = `${dateTime}\n\n`;
     
     return output.trim();
 }
