@@ -1137,7 +1137,6 @@ export default function Home() {
         const intro = (introTemplate || pickRandom(reportIntroTemplates)).replace('[Alert Name]', alertName);
         // Build the report format - simple format for all alerts
         let report = `${intro}\n\n`;
-        report += `${dateTime}\n\n`;
         report += `${description}`;
         
         return report;
