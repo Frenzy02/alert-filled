@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, deleteDoc, doc, query, orderBy, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, deleteDoc, doc, query, orderBy, updateDoc, getDoc, setDoc } from 'firebase/firestore';
 import AddFormatModal from '@/components/AddFormatModal';
 
 export default function AdminPage() {
@@ -29,7 +29,7 @@ export default function AdminPage() {
     const [formatsLoading, setFormatsLoading] = useState(false);
     const [showFormatModal, setShowFormatModal] = useState(false);
     const [formatToEdit, setFormatToEdit] = useState(null);
-    const [activeTab, setActiveTab] = useState('formats'); // 'formats' | 'mappings' | 'ips' | 'whitelistAlerts'
+    const [activeTab, setActiveTab] = useState('formats'); // 'formats' | 'mappings' | 'ips' | 'threatIntel'
     const [searchFormats, setSearchFormats] = useState('');
     const [searchMappings, setSearchMappings] = useState('');
     const [searchIPs, setSearchIPs] = useState('');
@@ -46,6 +46,10 @@ export default function AdminPage() {
     const [editTenantName, setEditTenantName] = useState('');
     const [editAlertIP, setEditAlertIP] = useState('');
     const [editReason, setEditReason] = useState('');
+    // Threat Intel (VirusTotal)
+    const [vtApiKey, setVtApiKey] = useState('');
+    const [vtLoading, setVtLoading] = useState(false);
+    const [vtStatus, setVtStatus] = useState('');
     const router = useRouter();
 
     // Check if already authenticated
@@ -66,6 +70,7 @@ export default function AdminPage() {
             fetchFieldMappings();
             fetchAlertFormats();
             fetchWhitelistAlerts();
+            fetchThreatIntelSettings();
         }
     }, [isAuthenticated]);
 
@@ -582,6 +587,40 @@ export default function AdminPage() {
         fetchAlertFormats();
     };
 
+    // Threat Intel settings (VirusTotal API key)
+    const fetchThreatIntelSettings = async () => {
+        try {
+            const settingsRef = doc(db, 'settings', 'integrations');
+            const snap = await getDoc(settingsRef);
+            const data = snap.exists() ? snap.data() : {};
+            setVtApiKey(data.virusTotalApiKey || '');
+        } catch (err) {
+            setError('Failed to fetch threat intel settings: ' + err.message);
+        }
+    };
+
+    const handleSaveVtKey = async () => {
+        if (!vtApiKey.trim()) {
+            setError('Please enter a VirusTotal API key');
+            return;
+        }
+        try {
+            setVtLoading(true);
+            await setDoc(
+                doc(db, 'settings', 'integrations'),
+                { virusTotalApiKey: vtApiKey.trim(), updatedAt: new Date().toISOString() },
+                { merge: true }
+            );
+            setVtStatus('VirusTotal API key saved.');
+            setError('');
+            setTimeout(() => setVtStatus(''), 3000);
+        } catch (err) {
+            setError('Failed to save API key: ' + err.message);
+        } finally {
+            setVtLoading(false);
+        }
+    };
+
     // Whitelist Alert tab: fetch from Firebase
     const fetchWhitelistAlerts = async () => {
         try {
@@ -893,6 +932,16 @@ export default function AdminPage() {
                                 }`}
                             >
                                 IP Address Whitelist ({allowedIPs.length})
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('threatIntel')}
+                                className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all ${
+                                    activeTab === 'threatIntel'
+                                        ? 'border-b-2 border-emerald-400 text-emerald-300'
+                                        : 'text-slate-400 hover:text-slate-200'
+                                }`}
+                            >
+                                Threat Intel
                             </button>
                         </div>
 
@@ -1244,6 +1293,37 @@ export default function AdminPage() {
                                 </table>
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {/* Tab Content - Threat Intel */}
+                        {activeTab === 'threatIntel' && (
+                            <div>
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                                    Configure VirusTotal API key for malicious IP checks on the home page.
+                                </p>
+                                <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                                    <label className="block text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">
+                                        VirusTotal API Key
+                                    </label>
+                                    <input
+                                        type="password"
+                                        value={vtApiKey}
+                                        onChange={(e) => setVtApiKey(e.target.value)}
+                                        placeholder="Paste your VirusTotal API key"
+                                        className="w-full p-2 text-xs border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                                    />
+                                    <button
+                                        onClick={handleSaveVtKey}
+                                        disabled={vtLoading}
+                                        className="mt-3 w-full bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:from-purple-700 hover:to-indigo-800 transition-all disabled:opacity-50"
+                                    >
+                                        {vtLoading ? 'Saving...' : 'Save API Key'}
+                                    </button>
+                                    {vtStatus && (
+                                        <p className="mt-2 text-xs text-green-600 dark:text-green-400">{vtStatus}</p>
+                                    )}
+                                </div>
                             </div>
                         )}
 

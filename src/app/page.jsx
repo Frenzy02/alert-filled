@@ -262,6 +262,57 @@ function getNestedValue(obj, path) {
     return current;
 }
 
+const isValidIPv4 = (ip) => {
+    const parts = ip.split('.').map((p) => Number(p));
+    return parts.length === 4 && parts.every((n) => Number.isInteger(n) && n >= 0 && n <= 255);
+};
+
+const extractIpsFromJson = (data) => {
+    const ips = new Set();
+    const paths = [
+        'srcip',
+        'source.ip',
+        'source_ip',
+        'dstip',
+        'destination.ip',
+        'destination_ip'
+    ];
+    for (const path of paths) {
+        const value = getNestedValue(data, path);
+        if (typeof value === 'string' && isValidIPv4(value.trim())) ips.add(value.trim());
+        if (Array.isArray(value)) {
+            value.forEach((v) => {
+                if (typeof v === 'string' && isValidIPv4(v.trim())) ips.add(v.trim());
+            });
+        }
+    }
+    return Array.from(ips);
+};
+
+const extractIpRoles = (data) => {
+    const roles = new Map(); // ip -> Set(roles)
+    const addRole = (ip, role) => {
+        if (!isValidIPv4(ip)) return;
+        const set = roles.get(ip) || new Set();
+        set.add(role);
+        roles.set(ip, set);
+    };
+    const rolePaths = [
+        { path: 'srcip', role: 'Source IP' },
+        { path: 'source.ip', role: 'Source IP' },
+        { path: 'source_ip', role: 'Source IP' },
+        { path: 'dstip', role: 'Destination IP' },
+        { path: 'destination.ip', role: 'Destination IP' },
+        { path: 'destination_ip', role: 'Destination IP' }
+    ];
+    rolePaths.forEach(({ path, role }) => {
+        const value = getNestedValue(data, path);
+        if (typeof value === 'string') addRole(value.trim(), role);
+        if (Array.isArray(value)) value.forEach((v) => typeof v === 'string' && addRole(v.trim(), role));
+    });
+    return roles;
+};
+
 // Find value in data by label (fuzzy matching)
 function findValueByLabel(obj, label, prefix = '', visited = new Set()) {
     if (!label) return null;
@@ -866,6 +917,7 @@ async function convertJsonToText(jsonString) {
 export default function Home() {
     const [jsonInput, setJsonInput] = useState('');
     const [textOutput, setTextOutput] = useState('');
+    const [baseFormattedBody, setBaseFormattedBody] = useState('');
     const [reportFormat, setReportFormat] = useState('');
     const [reportIntroTemplate, setReportIntroTemplate] = useState('');
     const [formattedHeader, setFormattedHeader] = useState('');
@@ -887,6 +939,8 @@ export default function Home() {
     const [whitelistMatch, setWhitelistMatch] = useState(null); // { reason, status, verification, remediation }
     const [whitelistLoading, setWhitelistLoading] = useState(false);
     const lastWhitelistRef = useRef({ json: '', result: null });
+    const [ipCheckLoading, setIpCheckLoading] = useState(false);
+    const [ipFindings, setIpFindings] = useState([]);
     const pasteTimeoutRef = useRef(null);
 
     // Fetch saved alert formats from Firebase
@@ -968,6 +1022,55 @@ export default function Home() {
         check();
         return () => { cancelled = true; };
     }, [currentJsonData]);
+
+    // Check IP reputation (VirusTotal) from JSON
+    useEffect(() => {
+        if (!currentJsonData) {
+            setIpFindings([]);
+            setIpCheckLoading(false);
+            return;
+        }
+        let cancelled = false;
+        const run = async () => {
+            try {
+                const ips = extractIpsFromJson(currentJsonData);
+                const roleMap = extractIpRoles(currentJsonData);
+                if (!ips.length) {
+                    setIpFindings([]);
+                    return;
+                }
+                setIpCheckLoading(true);
+                const res = await fetch('/api/virustotal-check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ips })
+                });
+                const data = await res.json();
+                if (cancelled) return;
+                const results = Array.isArray(data?.results) ? data.results : [];
+                const withRoles = results.map((item) => {
+                    const roles = roleMap.get(item.ip);
+                    return { ...item, roles: roles ? Array.from(roles) : [] };
+                });
+                setIpFindings(withRoles);
+            } catch {
+                if (!cancelled) setIpFindings([]);
+            } finally {
+                if (!cancelled) setIpCheckLoading(false);
+            }
+        };
+        run();
+        return () => { cancelled = true; };
+    }, [currentJsonData]);
+
+    // Rebuild formatted output when IP findings update (for footer message)
+    useEffect(() => {
+        if (!currentJsonData) return;
+        if (!formattedHeader) return;
+        const footer = buildSourceIpFooter(currentJsonData, ipFindings);
+        const outputWithHeader = `${formattedHeader}\n\n${baseFormattedBody || ''}${footer ? `\n\n${footer}` : ''}`;
+        setTextOutput(outputWithHeader);
+    }, [ipFindings, currentJsonData, formattedHeader, baseFormattedBody]);
 
     // Fetch saved field mappings from Firebase
     useEffect(() => {
@@ -1101,6 +1204,30 @@ export default function Home() {
         return { intro, header };
     };
 
+    const buildSourceIpFooter = (data, findings) => {
+        const alertName = (data?.xdr_event?.display_name || data?.event_name || '').toString().toLowerCase();
+        if (!alertName) return '';
+        const isTargetAlert =
+            alertName.includes('external firewall denial anomaly') ||
+            alertName.includes('scanner reputation anomaly');
+        if (!isTargetAlert) return '';
+        const sourceIp =
+            getNestedValue(data, 'srcip') ||
+            getNestedValue(data, 'source.ip') ||
+            getNestedValue(data, 'source_ip');
+        if (!sourceIp) return '';
+        const sourceFinding = (findings || []).find((item) => Array.isArray(item.roles) && item.roles.includes('Source IP'));
+        if (!sourceFinding) {
+            return 'Please verify the source IP if related to your operations, as it was not flagged malicious by security vendors. Thank you!';
+        }
+        const malicious = Number(sourceFinding.malicious || 0);
+        const suspicious = Number(sourceFinding.suspicious || 0);
+        const isBad = malicious > 0 || suspicious > 0;
+        return isBad
+            ? 'Please verify the source IP if related to your operations, as it was flagged malicious by security vendors. Thank you!'
+            : 'Please verify the source IP if related to your operations, as it was not flagged malicious by security vendors. Thank you!';
+    };
+
     // Generate report format output
     const generateReportFormat = (data, introTemplate) => {
         // Extract alert name
@@ -1141,7 +1268,9 @@ export default function Home() {
             setCurrentJsonData(parsedData);
             const { intro, header } = ensureRandomHeaders();
             const output = await convertJsonToText(input);
-            const outputWithHeader = `${header}\n\n${output || ''}`;
+            setBaseFormattedBody(output || '');
+            const footer = buildSourceIpFooter(parsedData, ipFindings);
+            const outputWithHeader = `${header}\n\n${output || ''}${footer ? `\n\n${footer}` : ''}`;
             setTextOutput(outputWithHeader);
             
             // Generate report format
@@ -1164,6 +1293,7 @@ export default function Home() {
         setJsonInput('');
         setTextOutput('');
         setReportFormat('');
+        setBaseFormattedBody('');
         setCurrentJsonData(null);
         setReportIntroTemplate('');
         setFormattedHeader('');
@@ -1255,7 +1385,9 @@ export default function Home() {
                     // Convert JSON to formatted text
                     const { intro, header } = ensureRandomHeaders();
                     const output = await convertJsonToText(input);
-                    const outputWithHeader = `${header}\n\n${output || ''}`;
+                    setBaseFormattedBody(output || '');
+                    const footer = buildSourceIpFooter(parsedData, ipFindings);
+                    const outputWithHeader = `${header}\n\n${output || ''}${footer ? `\n\n${footer}` : ''}`;
                     setTextOutput(outputWithHeader);
                     
                     // Generate report format
@@ -1481,6 +1613,39 @@ export default function Home() {
                             </p>
                         </div>
                     </div>
+                )}
+                {ipCheckLoading && (
+                    <div className="mb-4 p-4 rounded-lg bg-slate-900/60 border border-slate-600/60 text-slate-200 flex items-center gap-3">
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-300 border-t-transparent" />
+                        <span className="text-sm">Checking IP reputation...</span>
+                    </div>
+                )}
+                {!ipCheckLoading && ipFindings.length > 0 && (
+                    (() => {
+                        const flagged = ipFindings.filter((item) => Number(item.malicious || 0) > 0 || Number(item.suspicious || 0) > 0);
+                        if (!flagged.length) {
+                            return (
+                                <div className="mb-4 p-4 rounded-lg bg-emerald-900/30 border border-emerald-600/40 text-emerald-200">
+                                    <p className="font-semibold text-emerald-100">IP reputation check</p>
+                                    <p className="text-xs mt-1">No malicious or suspicious IPs detected.</p>
+                                </div>
+                            );
+                        }
+                        return (
+                            <div className="mb-4 p-4 rounded-lg bg-red-900/40 border border-red-600/60 text-red-200">
+                                <p className="font-semibold text-red-100">Malicious/Suspicious IP detected</p>
+                                <div className="text-xs mt-2 space-y-1">
+                                    {flagged.map((item) => (
+                                        <div key={item.ip}>
+                                            {item.ip}
+                                            {item.roles && item.roles.length > 0 ? ` (${item.roles.join(', ')})` : ''}
+                                            {' '} (malicious: {Number(item.malicious || 0)}, suspicious: {Number(item.suspicious || 0)})
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })()
                 )}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {/* Input Section */}
